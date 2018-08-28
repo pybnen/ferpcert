@@ -16,6 +16,10 @@ FerpManager::~FerpManager()
     delete c;
   for(std::array<uint32_t, 2>* a : antecedents)
     delete a;
+
+#ifdef FERP_CERT
+  if(aig != nullptr) delete aig;
+#endif
 }
 
 int FerpManager::addVariables(const std::vector<Var>& prop, const std::vector<Var>& orig, const std::vector<Lit>& anno)
@@ -54,6 +58,7 @@ int FerpManager::addClause(uint32_t id, std::vector<Lit>* clause, std::array<uin
   return 0;
 }
 
+#ifdef FERP_CHECK
 int FerpManager::check(const Formula& qbf)
 {
   for(uint32_t i = 1; i < trace_clauses.size(); i++)
@@ -210,9 +215,9 @@ int FerpManager::checkRedundant()
       mark[next] = true;
       queue.push_back(next);
     }
-  
+    
     next = cnf_id_to_trace_id[antecedents[node]->at(0)];
-  
+    
     if(!mark[next])
     {
       mark[next] = true;
@@ -225,3 +230,57 @@ int FerpManager::checkRedundant()
   
   return 0;
 }
+#endif // FERP_CHECK
+
+#ifdef FERP_CERT
+int FerpManager::extract(const Formula& qbf)
+{
+  collectPivots();
+  
+  if(aig != nullptr) aiger_reset(aig);
+  
+  aig = aiger_init();
+  
+  for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+  {
+    const Quant* quant = qbf.getQuant(qi);
+    if(quant->type == QuantType::EXISTS)
+      for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
+        aiger_add_input(aig, aiger_var2lit(*vit), nullptr);
+  }
+  printf("QBF has %ld variables\n", qbf.numVars());
+  return 0;
+}
+
+void FerpManager::collectPivots()
+{
+  pivots.clear();
+  pivots.resize(trace_clauses.size(), 0);
+  // assumes that everything is ok with the proof
+  for(int i = 1; i < trace_clauses.size(); i++)
+  {
+    if(antecedents[i]->at(1) == 0) continue;
+  
+    const std::vector<Lit>* parent1 = trace_clauses[cnf_id_to_trace_id[antecedents[i]->at(0)]];
+    const std::vector<Lit>* parent2 = trace_clauses[cnf_id_to_trace_id[antecedents[i]->at(1)]];
+    
+    auto li1 = parent1->begin();
+    auto li2 = parent2->begin();
+    
+    while(li1 != parent1->end() && li2 != parent2->end())
+    {
+      const Var v1 = var(*li1);
+      const Var v2 = var(*li2);
+      if(v1 < v2)
+        li1++;
+      else if(v1 > v2)
+        li2++;
+      else if(*li1 == *li2)
+        li1++, li2++;
+      else
+        pivots[i] = v1, li1 = parent1->end();
+    }
+    assert(pivots[i] != 0);
+  }
+}
+#endif // FERP_CERT

@@ -1,12 +1,13 @@
 #include <zlib.h>
 
-#include "Reader.h"
+#include "FerpReader.h"
+#include "QbfReader.h"
 
 int main(int argc, const char* argv[])
 {
-  if(argc != 3)
+  if(argc != 4)
   {
-    printf("usage: %s <QBF> <FERP>\n", argv[0]);
+    printf("usage: %s <QBF> <FERP> <AIGER>\n", argv[0]);
     return -1;
   }
   
@@ -30,9 +31,9 @@ int main(int argc, const char* argv[])
   }
   
   Formula qbf;
-  QBFReader qbf_reader(qbf_file);
+  QbfReader qbf_reader(qbf_file);
   
-  int res = qbf_reader.readQBF(qbf);
+  int res = qbf_reader.readQBF(qbf, false);
   gzclose(qbf_file);
   if (res != 0)
   {
@@ -41,7 +42,7 @@ int main(int argc, const char* argv[])
   }
   
   FerpManager fmngr;
-  FERPReader ferp_reader(ferp_file);
+  FerpReader ferp_reader(ferp_file);
   
   res = ferp_reader.readFERP(fmngr);
   gzclose(ferp_file);
@@ -51,12 +52,7 @@ int main(int argc, const char* argv[])
     return res;
   }
   
-  res = fmngr.check(qbf);
-  if(res != 0)
-  {
-    printf("Something went wrong while checking FERP, code %d\n", res);
-    return res;
-  }
+  fmngr.extract(qbf);
   
   return 0;
 }
