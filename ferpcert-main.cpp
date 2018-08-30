@@ -13,6 +13,7 @@ int main(int argc, const char* argv[])
   
   const char* qbf_name = argv[1];
   const char* ferp_name = argv[2];
+  const char* aig_name = argv[3];
   
   gzFile qbf_file = gzopen(qbf_name, "rb");
   
@@ -29,6 +30,15 @@ int main(int argc, const char* argv[])
     printf("Could not open file: %s", ferp_name);
     return -3;
   }
+  
+  FILE* aig_file = fopen(aig_name, "wb");
+  
+  if (aig_file == nullptr)
+  {
+    printf("Could not open file: %s", aig_name);
+    return -4;
+  }
+  
   
   Formula qbf;
   QbfReader qbf_reader(qbf_file);
@@ -53,6 +63,14 @@ int main(int argc, const char* argv[])
   }
   
   fmngr.extract(qbf);
+  res = fmngr.writeAiger(aig_file);
+  fclose(aig_file);
+  
+  if(res != 0)
+  {
+    printf("Something went wrong while writing AIGER, code %d\n", res);
+    return res;
+  }
   
   return 0;
 }

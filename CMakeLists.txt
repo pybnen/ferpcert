@@ -31,7 +31,7 @@ set(FERPCERT_FILES
     ferpcert-main.cpp
     aiger.c
     aiger.h
-   )
+        )
 
 add_executable(ferpcheck ${COMMON_FILES} ${FERPCHECK_FILES})
 add_executable(ferpcert ${COMMON_FILES} ${FERPCERT_FILES})

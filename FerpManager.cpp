@@ -233,6 +233,10 @@ int FerpManager::checkRedundant()
 #endif // FERP_CHECK
 
 #ifdef FERP_CERT
+
+#define make_aiger_lit(v, s) \
+  (aiger_var2lit(v) | !!s)
+
 int FerpManager::extract(const Formula& qbf)
 {
   collectPivots();
@@ -248,8 +252,91 @@ int FerpManager::extract(const Formula& qbf)
       for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
         aiger_add_input(aig, aiger_var2lit(*vit), nullptr);
   }
+  
+  uint32_t num_prop = prop_to_original.rbegin()->first + 1;
+  
+  current_var = (uint32_t)(qbf.numVars() + 1);
+  
+  std::vector<std::vector<uint32_t>> active(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
+  std::vector<uint32_t> top(trace_clauses.size(), aiger_false);
+  std::vector<bool> mark(trace_clauses.size(), false);
+  // apply active and top rule for leaf clauses
+  for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+  {
+    if(pivots[ci] != 0) continue;
+    
+    mark[ci] = true;
+    const std::vector<Lit>* clause = trace_clauses[ci];
+    
+    // generate cube of negated literals in topmost existential quantifier
+    uint32_t out = aiger_true;
+    for(uint32_t li = 0; li < clause->size(); li++)
+    {
+      const Lit l = clause->at(li);
+      if(qbf.getVarDepth(prop_to_original[var(l)]) != 0) continue;
+      
+      uint32_t rhs = make_aiger_lit(prop_to_original[var(l)], !sign(l));
+      
+      if(out == aiger_true)
+        out = rhs;
+      else
+        out = makeAND(out, rhs);
+    }
+    
+    // the clause is satisfied by assignment if the part of the clause
+    // containing literals from topmost existential quantifier is satisfied
+    top[ci] = aiger_not(out);
+    
+    for(uint32_t li = 0; li < clause->size(); li++)
+    {
+      const Lit l = clause->at(li);
+      if(qbf.getVarDepth(prop_to_original[var(l)]) == 0) continue;
+      
+      active[ci][var(l)] = out;
+    }
+  }
+  
+  bool updated = true;
+  while(updated)
+  {
+    updated = false;
+    
+    for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+    {
+      if(mark[ci]) continue;
+      
+      uint32_t parent1 = antecedents[ci]->at(0);
+      uint32_t parent2 = antecedents[ci]->at(1);
+      Var pivot = pivots[ci];
+      
+      if(!mark[parent1] || !mark[parent2]) continue;
+      
+      mark[ci] = true;
+      updated = true;
+      
+      uint32_t cond1 = makeAND(active[parent1][pivot], active[parent2][pivot]);
+      uint32_t cond2 = makeAND(aiger_not(active[parent1][pivot]), aiger_not(top[parent1]));
+      uint32_t cond3 = makeAND(aiger_not(active[parent2][pivot]), aiger_not(top[parent2]));
+      
+      top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
+      
+      for(uint32_t vi = 1; vi < num_prop; vi++)
+      {
+        uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
+        uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
+        active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
+      }
+    }
+  }
+  
+  
   printf("QBF has %ld variables\n", qbf.numVars());
   return 0;
+}
+
+int FerpManager::writeAiger(FILE* file)
+{
+  return !aiger_write_to_file(aig, aiger_ascii_mode, file);
 }
 
 void FerpManager::collectPivots()
@@ -282,5 +369,27 @@ void FerpManager::collectPivots()
     }
     assert(pivots[i] != 0);
   }
+}
+
+FerpManager::Redundancy FerpManager::find_redundant(uint32_t a, uint32_t b)
+{
+  if(aiger_sign(b) == 1) return RED_NONE;
+  
+  auto inv_iter = inv_node_cache.find(b);
+  if(inv_iter == inv_node_cache.end()) return RED_NONE;
+
+  uint32_t left = node_first(inv_iter->second);
+  uint32_t right = node_second(inv_iter->second);
+  if(a == left || a == right)
+    return RED_OTHER;
+    
+  if(a == aiger_not(left) || a == aiger_not(right))
+    return RED_FALSE;
+  
+  // if we still don't have a match, try DFS into children
+  Redundancy rec = find_redundant(a, left);
+  if(rec != RED_NONE) return rec;
+  
+  return find_redundant(a, right);
 }
 #endif // FERP_CERT
