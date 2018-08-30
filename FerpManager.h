@@ -29,16 +29,17 @@ private:
   std::vector<uint32_t> trace_id_to_cnf_id;          ///< Clause ids as they appear in the trace
   std::map<uint32_t, uint32_t> cnf_id_to_trace_id;   ///< Lookup table in other direction
   std::vector<std::array<uint32_t, 2>*> antecedents; ///< Stores antecedents of each trace clause
-  std::vector<Var> pivots;                           ///< Stores pivot of each resolved trace clause
   
   std::vector<Lit> orig_ex;
   uint32_t root;
 #ifdef FERP_CERT
-  aiger* aig;
-  uint32_t current_var;
-  std::unordered_map<uint64_t, uint32_t> node_cache;
-  std::unordered_map<uint32_t, uint64_t> inv_node_cache;
-  enum Redundancy {RED_NONE, RED_FALSE, RED_OTHER};
+  aiger* aig;                                            ///< AIG in which the model is stored
+  uint32_t current_aig_var;                              ///< Current AIG variable, returned at next call to newVar()
+  std::vector<Var> pivots;                               ///< Stores pivot of each resolved trace clause
+  std::map<Lit, std::vector<Var>> indicators;            ///< Maps from annotation value to propositional variables
+  std::unordered_map<uint64_t, uint32_t> node_cache;     ///< Cache Map for reusing AND gates
+  std::unordered_map<uint32_t, uint64_t> inv_node_cache; ///< Inverse of node_cache
+  enum Redundancy {RED_NONE, RED_FALSE, RED_OTHER};      ///< Used for signaling in find_redundant
 #endif
   
 #ifdef FERP_CHECK
@@ -48,6 +49,7 @@ private:
 #endif
 #ifdef FERP_CERT
   void collectPivots();
+  void collectIndicators();
   inline uint32_t makeITE(uint32_t cond, uint32_t then_b, uint32_t else_b);
   inline uint32_t makeAND(uint32_t a, uint32_t b);
   inline uint32_t makeOR(uint32_t a, uint32_t b);
@@ -74,7 +76,7 @@ public:
 FerpManager::FerpManager() :
 root(0)
 #ifdef FERP_CERT
-, aig(nullptr), current_var(0)
+, aig(nullptr), current_aig_var(0)
 #endif
 {};
 
@@ -158,7 +160,7 @@ inline uint32_t FerpManager::makeOR(uint32_t a, uint32_t b)
 
 inline uint32_t FerpManager::newVar()
 {
-  return current_var++;
+  return current_aig_var++;
 }
 #endif
 

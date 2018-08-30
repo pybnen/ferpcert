@@ -43,7 +43,7 @@ int main(int argc, const char* argv[])
   Formula qbf;
   QbfReader qbf_reader(qbf_file);
   
-  int res = qbf_reader.readQBF(qbf, false);
+  int res = qbf_reader.readQBF(qbf);
   gzclose(qbf_file);
   if (res != 0)
   {

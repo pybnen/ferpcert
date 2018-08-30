@@ -240,6 +240,7 @@ int FerpManager::checkRedundant()
 int FerpManager::extract(const Formula& qbf)
 {
   collectPivots();
+  collectIndicators();
   
   if(aig != nullptr) aiger_reset(aig);
   
@@ -255,9 +256,11 @@ int FerpManager::extract(const Formula& qbf)
   
   uint32_t num_prop = prop_to_original.rbegin()->first + 1;
   
-  current_var = (uint32_t)(qbf.numVars() + 1);
+  current_aig_var = (uint32_t)(qbf.numVars() + 1);
   
   std::vector<std::vector<uint32_t>> active(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
+  std::vector<std::vector<uint32_t>> cumulative(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
+  
   std::vector<uint32_t> top(trace_clauses.size(), aiger_false);
   std::vector<bool> mark(trace_clauses.size(), false);
   // apply active and top rule for leaf clauses
@@ -293,6 +296,7 @@ int FerpManager::extract(const Formula& qbf)
       if(qbf.getVarDepth(prop_to_original[var(l)]) == 0) continue;
       
       active[ci][var(l)] = out;
+      cumulative[ci][var(l)] = out;
     }
   }
   
@@ -322,15 +326,58 @@ int FerpManager::extract(const Formula& qbf)
       
       for(uint32_t vi = 1; vi < num_prop; vi++)
       {
+        if(vi == pivot) continue;
+        
         uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
         uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
         active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
       }
+  
+      for(uint32_t vi = 1; vi < num_prop; vi++)
+      {
+        uint32_t else_branch = makeAND(cond3, cumulative[parent2][vi]);
+        uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
+        cumulative[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, cumulative[parent1][vi], else_branch));
+      }
     }
   }
   
+  for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+  {
+    const Quant* quant = qbf.getQuant(qi);
+    if(quant->type == QuantType::FORALL)
+    {
+      for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
+      {
+        Lit l_pos = make_lit(*vit, false);
+        Lit l_neg = make_lit(*vit, true);
+        
+        auto lpiter = indicators.find(l_pos);
+        auto lniter = indicators.find(l_neg);
+        
+        if(lniter == indicators.end())
+          aiger_add_and(aig, aiger_var2lit(*vit), aiger_true, aiger_true);
+        else if(lpiter == indicators.end())
+          aiger_add_and(aig, aiger_var2lit(*vit), aiger_false, aiger_false);
+        else
+        {
+          uint32_t pos_ind = aiger_false;
+          uint32_t neg_ind = aiger_false;
+          
+          for(const Var v : lpiter->second)
+            pos_ind = makeOR(pos_ind, cumulative[root][v]);
   
-  printf("QBF has %ld variables\n", qbf.numVars());
+          for(const Var v : lniter->second)
+            neg_ind = makeOR(neg_ind, cumulative[root][v]);
+          
+          aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, aiger_not(neg_ind));
+        }
+        aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
+      }
+      break;
+    }
+  }
+  
   return 0;
 }
 
@@ -368,6 +415,22 @@ void FerpManager::collectPivots()
         pivots[i] = v1, li1 = parent1->end();
     }
     assert(pivots[i] != 0);
+  }
+}
+
+void FerpManager::collectIndicators()
+{
+  indicators.clear();
+  for(const auto& p2a : prop_to_annotation)
+  {
+    const std::vector<Lit>& anno = *(p2a.second);
+    for(const Lit l : anno)
+    {
+      auto ind_iter = indicators.find(l);
+      if(ind_iter == indicators.end())
+        ind_iter = indicators.insert(std::pair<Lit, std::vector<Var>>(l, std::vector<Var>())).first;
+      ind_iter->second.push_back(p2a.first);
+    }
   }
 }
 

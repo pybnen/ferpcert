@@ -2,9 +2,10 @@
 // Created by vedad on 24/08/18.
 //
 
+#include <iostream>
 #include "QbfReader.h"
 
-int QbfReader::readQBF(Formula& f, bool read_matrix)
+int QbfReader::readQBF(Formula& f)
 {
   // read the header
   readComments();
@@ -13,12 +14,13 @@ int QbfReader::readQBF(Formula& f, bool read_matrix)
   
   if (readHeader(num_vars, num_clauses)) return -1;
   if (readPrefix(f)) return -2;
-  if (read_matrix && readMatrix(f)) return -3;
+  if (readMatrix(f)) return -3;
+  
   f.finalise();
   if (f.numVars() != num_vars)
-    printf("c Warning: Variable count mismatch\n");
-  if (read_matrix && f.numClauses() != num_clauses)
-    printf("c Warning: Clause count mismatch\n");
+    printf("c Warning: Variable count mismatch %ld %d\n", f.numVars(), num_vars);
+  if (f.numClauses() != num_clauses)
+    printf("c Warning: Clause count mismatch %ld %d\n", f.numClauses(), num_clauses);
   return 0;
 }
 
@@ -106,6 +108,9 @@ int QbfReader::readMatrix(Formula& f)
   {
     if (*stream == EOF) break;
     if (readClause()) return 6;
+    for(const Lit l : clause_)
+      std::cout << l << " ";
+    std::cout << std::endl;
     f.addClause(clause_);
   }
   

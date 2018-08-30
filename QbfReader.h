@@ -33,7 +33,7 @@ private:
   int readClause();
 public:
   /// Reads the whle QBF and stores it in \a f
-  int readQBF(Formula& f, bool read_matrix = true);
+  int readQBF(Formula& f);
   
   /// Reader Constructor
   QbfReader (gzFile& file) : Reader(file), type_(QuantType::NONE) {};
