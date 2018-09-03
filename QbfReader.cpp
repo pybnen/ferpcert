@@ -108,9 +108,6 @@ int QbfReader::readMatrix(Formula& f)
   {
     if (*stream == EOF) break;
     if (readClause()) return 6;
-    for(const Lit l : clause_)
-      std::cout << l << " ";
-    std::cout << std::endl;
     f.addClause(clause_);
   }
   

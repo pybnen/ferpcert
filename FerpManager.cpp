@@ -312,6 +312,7 @@ int FerpManager::extract(const Formula& qbf)
       uint32_t parent1 = antecedents[ci]->at(0);
       uint32_t parent2 = antecedents[ci]->at(1);
       Var pivot = pivots[ci];
+      assert(pivot != 0);
       
       if(!mark[parent1] || !mark[parent2]) continue;
       
@@ -354,29 +355,35 @@ int FerpManager::extract(const Formula& qbf)
         
         auto lpiter = indicators.find(l_pos);
         auto lniter = indicators.find(l_neg);
+  
+        uint32_t pos_ind = aiger_false;
+        uint32_t neg_ind = aiger_false;
         
         if(lniter == indicators.end())
-          aiger_add_and(aig, aiger_var2lit(*vit), aiger_true, aiger_true);
+          pos_ind = aiger_true, neg_ind = aiger_true;
         else if(lpiter == indicators.end())
-          aiger_add_and(aig, aiger_var2lit(*vit), aiger_false, aiger_false);
+          pos_ind = aiger_false, neg_ind = aiger_false;
         else
         {
-          uint32_t pos_ind = aiger_false;
-          uint32_t neg_ind = aiger_false;
-          
           for(const Var v : lpiter->second)
             pos_ind = makeOR(pos_ind, cumulative[root][v]);
   
           for(const Var v : lniter->second)
             neg_ind = makeOR(neg_ind, cumulative[root][v]);
           
-          aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, aiger_not(neg_ind));
+          neg_ind = aiger_not(neg_ind);
         }
+        aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
+        uint64_t node = make_node(pos_ind, neg_ind);
+        node_cache[node] = aiger_var2lit(*vit);
+        inv_node_cache[aiger_var2lit(*vit)] = node;
         aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
       }
       break;
     }
   }
+  
+  checkOscilation();
   
   return 0;
 }
@@ -455,4 +462,42 @@ FerpManager::Redundancy FerpManager::find_redundant(uint32_t a, uint32_t b)
   
   return find_redundant(a, right);
 }
+
+void FerpManager::checkOscilation()
+{
+  std::set<uint32_t> permanent;
+  std::set<uint32_t> temporary;
+  for(int oi = 0; oi < aig->num_outputs; oi++)
+  {
+    temporary.clear();
+    auto n_iter = inv_node_cache.find(aig->outputs[oi].lit);
+    assert(n_iter != inv_node_cache.end());
+    printf("checking output %d\n", n_iter->first);
+    checkOscilationHelper(permanent, temporary, n_iter->first);
+  }
+}
+
+void FerpManager::checkOscilationHelper(std::set<uint32_t>& permanent, std::set<uint32_t>& temporary, uint32_t current)
+{
+  assert(aiger_sign(current) == 0);
+  if(permanent.find(current) != permanent.end()) return;
+  
+  bool missing = temporary.insert(current).second;
+  assert(missing);
+  auto n_iter = inv_node_cache.find(current);
+  uint64_t node; uint32_t left, right;
+  
+  if(n_iter == inv_node_cache.end())
+    goto cleanup;
+  
+  node = n_iter->second;
+  left = aiger_strip(node_first(node));
+  right = aiger_strip(node_second(node));
+  checkOscilationHelper(permanent, temporary, left);
+  checkOscilationHelper(permanent, temporary, right);
+cleanup:
+  permanent.insert(current);
+  temporary.erase(current);
+}
+
 #endif // FERP_CERT

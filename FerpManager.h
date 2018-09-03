@@ -55,6 +55,8 @@ private:
   inline uint32_t makeOR(uint32_t a, uint32_t b);
   inline uint32_t newVar();
   Redundancy find_redundant(uint32_t a, uint32_t b);
+  void checkOscilationHelper(std::set<uint32_t>& permanent, std::set<uint32_t>& temporary, uint32_t current);
+  void checkOscilation();
 #endif
 public:
   inline FerpManager();
