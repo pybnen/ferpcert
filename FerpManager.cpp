@@ -263,7 +263,15 @@ int FerpManager::extract(const Formula& qbf)
   
   std::vector<uint32_t> top(trace_clauses.size(), aiger_false);
   std::vector<bool> mark(trace_clauses.size(), false);
-  // apply active and top rule for leaf clauses
+  
+  // apply active, cumulative, and top rule for leaf clauses
+  // * top rule:  clause is satisfied if the part of the caluse containing literals from a previous layer is satisfied
+  // * active rule : variable is active if it is not assigned yet and contained in the clause and clause is not satisfied
+  // * cumulative rule : same as active for leaf clauses
+  ////   example qbf  e 1 2 3 a 4 5 e 6 7 . (-1 | 3 | 5 | 7) & ...
+  ////   proof leaf: (-1 | 3 | 7^{4 -5})      top: (-1 | 3)
+  ////                                     active:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
+  ////                                 cumulative:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
   for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
   {
     if(pivots[ci] != 0) continue;
@@ -272,6 +280,8 @@ int FerpManager::extract(const Formula& qbf)
     const std::vector<Lit>* clause = trace_clauses[ci];
     
     // generate cube of negated literals in topmost existential quantifier
+    // \todo it might be possible to optimise this further:
+    // by looking for existing sub-clause encodings
     uint32_t out = aiger_true;
     for(uint32_t li = 0; li < clause->size(); li++)
     {
@@ -300,6 +310,16 @@ int FerpManager::extract(const Formula& qbf)
     }
   }
   
+  // go through the rest of the proof in some topological order: antecedents always come before the resolvent
+  // * top rule: a clause is true if the pivot is not active in both parents and
+  //                                 parent 1 is true or contains the pivot and
+  //                                 parent 2 is true or contains the pivot
+  // * active rule: if the variable is the pivot then it cannot be active
+  //                if both parents both have active pivot then each variable is active if it is active in either parent
+  //                if parent 1 is not true and does not have active pivot: inherit activity from parent1
+  //                if parent 2 is not true and does not have active pivot: inherit activity from parent1
+  //                else the clause is true and nothing is active there anymore
+  // * cumulative rule: same as active rule, but pivots don't get any special treatment
   bool updated = true;
   while(updated)
   {
@@ -319,23 +339,31 @@ int FerpManager::extract(const Formula& qbf)
       mark[ci] = true;
       updated = true;
       
+      // pivot is active in both parents, resolution is possible
       uint32_t cond1 = makeAND(active[parent1][pivot], active[parent2][pivot]);
+      // parent 1 is not true and does not have active pivot
       uint32_t cond2 = makeAND(aiger_not(active[parent1][pivot]), aiger_not(top[parent1]));
+      // parent 2 is not true and does not have active pivot
       uint32_t cond3 = makeAND(aiger_not(active[parent2][pivot]), aiger_not(top[parent2]));
       
+      // clause is set to true if none of the conditions apply
       top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
       
       for(uint32_t vi = 1; vi < num_prop; vi++)
       {
-        if(vi == pivot) continue;
+        if(vi == pivot) continue; // pivot cannot be active in the resolvent
         
+        // optimisation: condition 3 is true and variable is active in parent 2
         uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
+        // active in either parent
         uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
+        // big if then else for deciding from where the activity comes
         active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
       }
   
       for(uint32_t vi = 1; vi < num_prop; vi++)
       {
+        // same as above but pivots are not treated differently from normal variables
         uint32_t else_branch = makeAND(cond3, cumulative[parent2][vi]);
         uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
         cumulative[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, cumulative[parent1][vi], else_branch));
@@ -343,6 +371,11 @@ int FerpManager::extract(const Formula& qbf)
     }
   }
   
+  
+  // go through all variable of this quantifier and look through the cumulative activities at the root node
+  // indicators for var being true are the cumulatives of prop. variables which are annotated with var = true
+  // a corresponding definition applies to indicators of var being false
+  // the output for the variable is then pos_ind & -neg_ind
   for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
   {
     const Quant* quant = qbf.getQuant(qi);
