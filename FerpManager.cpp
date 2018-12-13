@@ -246,6 +246,7 @@ int FerpManager::extract(const Formula& qbf)
   
   aig = aiger_init();
   
+  // add all inputs from the existential variables
   for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
   {
     const Quant* quant = qbf.getQuant(qi);
@@ -262,160 +263,188 @@ int FerpManager::extract(const Formula& qbf)
   std::vector<std::vector<uint32_t>> cumulative(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
   
   std::vector<uint32_t> top(trace_clauses.size(), aiger_false);
-  std::vector<bool> mark(trace_clauses.size(), false);
+  std::vector<bool> mark;
   
-  // apply active, cumulative, and top rule for leaf clauses
-  // * top rule:  clause is satisfied if the part of the caluse containing literals from a previous layer is satisfied
-  // * active rule : variable is active if it is not assigned yet and contained in the clause and clause is not satisfied
-  // * cumulative rule : same as active for leaf clauses
-  ////   example qbf  e 1 2 3 a 4 5 e 6 7 . (-1 | 3 | 5 | 7) & ...
-  ////   proof leaf: (-1 | 3 | 7^{4 -5})      top: (-1 | 3)
-  ////                                     active:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
-  ////                                 cumulative:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
-  for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+  // special handling for universal variables which are in the first block
+  uint32_t qinit = 0;
+  const Quant* quant0 = qbf.getQuant(0);
+  if(quant0->type == QuantType::FORALL)
   {
-    if(pivots[ci] != 0) continue;
-    
-    mark[ci] = true;
-    const std::vector<Lit>* clause = trace_clauses[ci];
-    
-    // generate cube of negated literals in topmost existential quantifier
-    // \todo it might be possible to optimise this further:
-    // by looking for existing sub-clause encodings
-    uint32_t out = aiger_true;
-    for(uint32_t li = 0; li < clause->size(); li++)
+    for(const_var_iterator vit = quant0->begin(); vit != quant0->end(); vit++)
     {
-      const Lit l = clause->at(li);
-      if(qbf.getVarDepth(prop_to_original[var(l)]) != 0) continue;
-      
-      uint32_t rhs = make_aiger_lit(prop_to_original[var(l)], !sign(l));
-      
-      if(out == aiger_true)
-        out = rhs;
-      else
-        out = makeAND(out, rhs);
-    }
+      Lit l_pos = make_lit(*vit, false);
+      Lit l_neg = make_lit(*vit, true);
     
-    // the clause is satisfied by assignment if the part of the clause
-    // containing literals from topmost existential quantifier is satisfied
-    top[ci] = aiger_not(out);
-    
-    for(uint32_t li = 0; li < clause->size(); li++)
-    {
-      const Lit l = clause->at(li);
-      if(qbf.getVarDepth(prop_to_original[var(l)]) == 0) continue;
+      auto lpiter = indicators.find(l_pos);
+      auto lniter = indicators.find(l_neg);
       
-      active[ci][var(l)] = out;
-      cumulative[ci][var(l)] = out;
+      assert(lniter == indicators.end() || lpiter == indicators.end());
+      
+      uint32_t ind = (lniter == indicators.end()) ? aiger_true : aiger_false;
+      
+      aiger_add_and(aig, aiger_var2lit(*vit), ind, ind);
+      aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
     }
+    qinit = 1;
   }
   
-  // go through the rest of the proof in some topological order: antecedents always come before the resolvent
-  // * top rule: a clause is true if the pivot is not active in both parents and
-  //                                 parent 1 is true or contains the pivot and
-  //                                 parent 2 is true or contains the pivot
-  // * active rule: if the variable is the pivot then it cannot be active
-  //                if both parents both have active pivot then each variable is active if it is active in either parent
-  //                if parent 1 is not true and does not have active pivot: inherit activity from parent1
-  //                if parent 2 is not true and does not have active pivot: inherit activity from parent1
-  //                else the clause is true and nothing is active there anymore
-  // * cumulative rule: same as active rule, but pivots don't get any special treatment
-  bool updated = true;
-  while(updated)
-  {
-    updated = false;
-    
-    for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
-    {
-      if(mark[ci]) continue;
-      
-      uint32_t parent1 = antecedents[ci]->at(0);
-      uint32_t parent2 = antecedents[ci]->at(1);
-      Var pivot = pivots[ci];
-      assert(pivot != 0);
-      
-      if(!mark[parent1] || !mark[parent2]) continue;
-      
-      mark[ci] = true;
-      updated = true;
-      
-      // pivot is active in both parents, resolution is possible
-      uint32_t cond1 = makeAND(active[parent1][pivot], active[parent2][pivot]);
-      // parent 1 is not true and does not have active pivot
-      uint32_t cond2 = makeAND(aiger_not(active[parent1][pivot]), aiger_not(top[parent1]));
-      // parent 2 is not true and does not have active pivot
-      uint32_t cond3 = makeAND(aiger_not(active[parent2][pivot]), aiger_not(top[parent2]));
-      
-      // clause is set to true if none of the conditions apply
-      top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
-      
-      for(uint32_t vi = 1; vi < num_prop; vi++)
-      {
-        if(vi == pivot) continue; // pivot cannot be active in the resolvent
-        
-        // optimisation: condition 3 is true and variable is active in parent 2
-        uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
-        // active in either parent
-        uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
-        // big if then else for deciding from where the activity comes
-        active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
-      }
-  
-      for(uint32_t vi = 1; vi < num_prop; vi++)
-      {
-        // same as above but pivots are not treated differently from normal variables
-        uint32_t else_branch = makeAND(cond3, cumulative[parent2][vi]);
-        uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
-        cumulative[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, cumulative[parent1][vi], else_branch));
-      }
-    }
-  }
-  
-  
-  // go through all variable of this quantifier and look through the cumulative activities at the root node
-  // indicators for var being true are the cumulatives of prop. variables which are annotated with var = true
-  // a corresponding definition applies to indicators of var being false
-  // the output for the variable is then pos_ind & -neg_ind
-  for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+  for(uint32_t qi = qinit; qi < qbf.numQuants() - 1; qi++)
   {
     const Quant* quant = qbf.getQuant(qi);
-    if(quant->type == QuantType::FORALL)
+    if(quant->type == QuantType::EXISTS) continue;
+    
+    // reset marked clauses
+    mark.clear(); mark.resize(trace_clauses.size(), false);
+    
+    // apply active, cumulative, and top rule for leaf clauses
+    // * top rule:  clause is satisfied if the partial clause containing literals from a previous layer is satisfied
+    // * active rule : variable is active if it is not assigned and contained in the clause and clause is not satisfied
+    // * cumulative rule : same as active for leaf clauses
+    ////   example qbf  e 1 2 3 a 4 5 e 6 7 . (-1 | 3 | 5 | 7) & ...
+    ////   proof leaf: (-1 | 3 | 7^{4 -5})    top: (-1 | 3)
+    ////                                   active:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
+    ////                               cumulative:  1 : false, 2 : false, 3: false, 6^{4 -5}: false, 7^{4 -5}: (1 & -3)
+    for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
     {
-      for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
+      if(pivots[ci] != 0) continue;
+      
+      mark[ci] = true;
+      const std::vector<Lit>* clause = trace_clauses[ci];
+      
+      // generate cube of negated literals in previous existential quantifier
+      uint32_t out = aiger_not(top[ci]); // continue from previously computed cube
+      for(uint32_t li = 0; li < clause->size(); li++)
       {
-        Lit l_pos = make_lit(*vit, false);
-        Lit l_neg = make_lit(*vit, true);
+        const Lit l = clause->at(li);
+        // ignore literals not in previous existential layer
+        if(qbf.getVarDepth(prop_to_original[var(l)]) != (qi - 1)) continue;
         
-        auto lpiter = indicators.find(l_pos);
-        auto lniter = indicators.find(l_neg);
-  
-        uint32_t pos_ind = aiger_false;
-        uint32_t neg_ind = aiger_false;
+        uint32_t rhs = make_aiger_lit(prop_to_original[var(l)], !sign(l));
         
-        if(lniter == indicators.end())
-          pos_ind = aiger_true, neg_ind = aiger_true;
-        else if(lpiter == indicators.end())
-          pos_ind = aiger_false, neg_ind = aiger_false;
-        else
-        {
-          for(const Var v : lpiter->second)
-            pos_ind = makeOR(pos_ind, cumulative[root][v]);
-  
-          for(const Var v : lniter->second)
-            neg_ind = makeOR(neg_ind, cumulative[root][v]);
-          
-          neg_ind = aiger_not(neg_ind);
-        }
-        aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
-        uint64_t node = make_node(pos_ind, neg_ind);
-        node_cache[node] = aiger_var2lit(*vit);
-        inv_node_cache[aiger_var2lit(*vit)] = node;
-        aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
+        out = makeAND(out, rhs);
       }
-      break;
+      
+      // the clause is satisfied by assignment if the part of the clause
+      // containing literals from previous existential quantifiers is satisfied
+      top[ci] = aiger_not(out);
+      
+      // active/cumulative if not assigned, and clause is not satisfied by assignment
+      for(uint32_t li = 0; li < clause->size(); li++)
+      {
+        const Var prop_v = var(clause->at(li));
+        uint32_t a = (qbf.getVarDepth(prop_to_original[prop_v]) < qi) ? aiger_false : out;
+        
+        active[ci][prop_v] = a;
+        cumulative[ci][prop_v] = a;
+      }
+    }
+    
+    // go through the rest of the proof in some topological order: antecedents always come before the resolvent
+    // * top rule: a clause is true if the pivot is not active in both parents and
+    //                                 parent 1 is true or contains the pivot and
+    //                                 parent 2 is true or contains the pivot
+    // * active rule: if the variable is the pivot then it cannot be active
+    //                if both parents have active pivot then each variable is active if it is active in either parent
+    //                if parent 1 is not true and does not have active pivot: inherit activity from parent1
+    //                if parent 2 is not true and does not have active pivot: inherit activity from parent2
+    //                else the clause is true and nothing is active there anymore
+    // * cumulative rule: same as active rule, but pivots don't get any special treatment
+    bool updated = true;
+    while(updated)
+    {
+      updated = false;
+      
+      for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+      {
+        if(mark[ci]) continue;
+        
+        uint32_t parent1 = antecedents[ci]->at(0);
+        uint32_t parent2 = antecedents[ci]->at(1);
+        Var pivot = pivots[ci];
+        assert(pivot != 0);
+        
+        if(!mark[parent1] || !mark[parent2]) continue;
+        
+        mark[ci] = true;
+        updated = true;
+        
+        // pivot is active in both parents, resolution is possible
+        uint32_t cond1 = makeAND(active[parent1][pivot], active[parent2][pivot]);
+        // parent 1 is not true and does not have active pivot
+        uint32_t cond2 = makeAND(aiger_not(active[parent1][pivot]), aiger_not(top[parent1]));
+        // parent 2 is not true and does not have active pivot
+        uint32_t cond3 = makeAND(aiger_not(active[parent2][pivot]), aiger_not(top[parent2]));
+        
+        // clause is set to true if none of the conditions apply
+        top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
+        
+        for(uint32_t vi = 1; vi < num_prop; vi++)
+        {
+          if(vi == pivot) continue; // pivot cannot be active in the resolvent
+          
+          // optimisation: condition 3 is true and variable is active in parent 2
+          uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
+          // active in either parent
+          uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
+          // big if then else for deciding from where the activity comes
+          active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
+        }
+    
+        for(uint32_t vi = 1; vi < num_prop; vi++)
+        {
+          // same as above but pivots are not treated differently from normal variables
+          uint32_t else_branch = makeAND(cond3, cumulative[parent2][vi]);
+          uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
+          cumulative[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, cumulative[parent1][vi], else_branch));
+        }
+      }
+    }
+    
+    
+    // go through all variable of this quantifier and look through the cumulative activities at the root node
+    // indicators for var being true are the cumulatives of prop. variables which are annotated with var = true
+    // a corresponding definition applies to indicators of var being false
+    // the output for the variable is then pos_ind & -neg_ind
+    for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+    {
+      const Quant* quant = qbf.getQuant(qi);
+      if(quant->type == QuantType::FORALL)
+      {
+        for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
+        {
+          Lit l_pos = make_lit(*vit, false);
+          Lit l_neg = make_lit(*vit, true);
+          
+          auto lpiter = indicators.find(l_pos);
+          auto lniter = indicators.find(l_neg);
+    
+          uint32_t pos_ind = aiger_false;
+          uint32_t neg_ind = aiger_false;
+          
+          if(lniter == indicators.end())
+            pos_ind = aiger_true, neg_ind = aiger_true;
+          else if(lpiter == indicators.end())
+            pos_ind = aiger_false, neg_ind = aiger_false;
+          else
+          {
+            for(const Var v : lpiter->second)
+              pos_ind = makeOR(pos_ind, cumulative[root][v]);
+    
+            for(const Var v : lniter->second)
+              neg_ind = makeOR(neg_ind, cumulative[root][v]);
+            
+            neg_ind = aiger_not(neg_ind);
+          }
+          aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
+          uint64_t node = make_node(pos_ind, neg_ind);
+          node_cache[node] = aiger_var2lit(*vit);
+          inv_node_cache[aiger_var2lit(*vit)] = node;
+          aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
+        }
+        break;
+      }
     }
   }
-  
   checkOscilation();
   
   return 0;
