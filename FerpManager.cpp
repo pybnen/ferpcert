@@ -399,50 +399,41 @@ int FerpManager::extract(const Formula& qbf)
         }
       }
     }
-    
-    
+
     // go through all variable of this quantifier and look through the cumulative activities at the root node
     // indicators for var being true are the cumulatives of prop. variables which are annotated with var = true
     // a corresponding definition applies to indicators of var being false
     // the output for the variable is then pos_ind & -neg_ind
-    for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+    for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
     {
-      const Quant* quant = qbf.getQuant(qi);
-      if(quant->type == QuantType::FORALL)
+      Lit l_pos = make_lit(*vit, false);
+      Lit l_neg = make_lit(*vit, true);
+
+      auto lpiter = indicators.find(l_pos);
+      auto lniter = indicators.find(l_neg);
+
+      uint32_t pos_ind = aiger_false;
+      uint32_t neg_ind = aiger_false;
+
+      if(lniter == indicators.end())
+        pos_ind = aiger_true, neg_ind = aiger_true;
+      else if(lpiter == indicators.end())
+        pos_ind = aiger_false, neg_ind = aiger_false;
+      else
       {
-        for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
-        {
-          Lit l_pos = make_lit(*vit, false);
-          Lit l_neg = make_lit(*vit, true);
-          
-          auto lpiter = indicators.find(l_pos);
-          auto lniter = indicators.find(l_neg);
-    
-          uint32_t pos_ind = aiger_false;
-          uint32_t neg_ind = aiger_false;
-          
-          if(lniter == indicators.end())
-            pos_ind = aiger_true, neg_ind = aiger_true;
-          else if(lpiter == indicators.end())
-            pos_ind = aiger_false, neg_ind = aiger_false;
-          else
-          {
-            for(const Var v : lpiter->second)
-              pos_ind = makeOR(pos_ind, cumulative[root][v]);
-    
-            for(const Var v : lniter->second)
-              neg_ind = makeOR(neg_ind, cumulative[root][v]);
-            
-            neg_ind = aiger_not(neg_ind);
-          }
-          aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
-          uint64_t node = make_node(pos_ind, neg_ind);
-          node_cache[node] = aiger_var2lit(*vit);
-          inv_node_cache[aiger_var2lit(*vit)] = node;
-          aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
-        }
-        break;
+        for(const Var v : lpiter->second)
+          pos_ind = makeOR(pos_ind, cumulative[root][v]);
+
+        for(const Var v : lniter->second)
+          neg_ind = makeOR(neg_ind, cumulative[root][v]);
+
+        neg_ind = aiger_not(neg_ind);
       }
+      aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
+      uint64_t node = make_node(pos_ind, neg_ind);
+      node_cache[node] = aiger_var2lit(*vit);
+      inv_node_cache[aiger_var2lit(*vit)] = node;
+      aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
     }
   }
   checkOscilation();
