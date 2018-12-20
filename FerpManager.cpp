@@ -414,11 +414,12 @@ int FerpManager::extract(const Formula& qbf)
 
       uint32_t pos_ind = aiger_false;
       uint32_t neg_ind = aiger_false;
+      uint32_t solution = aiger_false;
 
       if(lniter == indicators.end())
-        pos_ind = aiger_true, neg_ind = aiger_true;
+        solution = aiger_true;
       else if(lpiter == indicators.end())
-        pos_ind = aiger_false, neg_ind = aiger_false;
+        solution = aiger_false;
       else
       {
         for(const Var v : lpiter->second)
@@ -428,16 +429,23 @@ int FerpManager::extract(const Formula& qbf)
           neg_ind = makeOR(neg_ind, cumulative[root][v]);
 
         neg_ind = aiger_not(neg_ind);
+
+        if(pos_ind == aiger_true || pos_ind == aiger_false)
+          solution = pos_ind;
+        else if(neg_ind == aiger_true || neg_ind == aiger_false)
+          solution = neg_ind;
+        else
+          solution = (lpiter->second.size() < lniter->second.size()) ? pos_ind : neg_ind;
       }
-      aiger_add_and(aig, aiger_var2lit(*vit), pos_ind, neg_ind);
-      uint64_t node = make_node(pos_ind, neg_ind);
+      aiger_add_and(aig, aiger_var2lit(*vit), solution, solution);
+      uint64_t node = make_node(solution, solution);
       node_cache[node] = aiger_var2lit(*vit);
       inv_node_cache[aiger_var2lit(*vit)] = node;
       aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
     }
   }
   checkOscilation();
-  
+  aiger_prune(aig);
   return 0;
 }
 

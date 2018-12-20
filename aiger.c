@@ -272,7 +272,7 @@ aiger_delete_symbols_aux (aiger_private * private,
     {
       aiger_symbol *s = symbols + i;
       if (!s->name)
-	continue;
+	      continue;
 
       aiger_delete_str (private, s->name);
       s->name = 0;
@@ -662,7 +662,7 @@ aiger_check_next_defined (aiger_private * private)
       assert (private->types[aiger_lit2var (latch)].latch);
 
       if (!aiger_literal_defined (private, next))
-	aiger_error_uu (private,
+	      aiger_error_uu (private,
 			"next state function %u of latch %u undefined",
 			next, latch);
     }
@@ -712,10 +712,10 @@ aiger_check_outputs_defined (aiger_private * private)
       output = public->outputs[i].lit;
       output = aiger_strip (output);
       if (output <= 1)
-	continue;
+      	continue;
 
       if (!aiger_literal_defined (private, output))
-	aiger_error_u (private, "output %u undefined", output);
+      	aiger_error_u (private, "output %u undefined", output);
     }
 }
 
@@ -733,10 +733,10 @@ aiger_check_bad_defined (aiger_private * private)
       bad = public->bad[i].lit;
       bad = aiger_strip (bad);
       if (bad <= 1)
-	continue;
+	      continue;
 
       if (!aiger_literal_defined (private, bad))
-	aiger_error_u (private, "bad %u undefined", bad);
+	      aiger_error_u (private, "bad %u undefined", bad);
     }
 }
 
@@ -754,10 +754,10 @@ aiger_check_constraints_defined (aiger_private * private)
       constraint = public->constraints[i].lit;
       constraint = aiger_strip (constraint);
       if (constraint <= 1)
-	continue;
+	      continue;
 
       if (!aiger_literal_defined (private, constraint))
-	aiger_error_u (private, "constraint %u undefined", constraint);
+	      aiger_error_u (private, "constraint %u undefined", constraint);
     }
 }
 
@@ -775,10 +775,10 @@ aiger_check_fairness_defined (aiger_private * private)
       fairness = public->fairness[i].lit;
       fairness = aiger_strip (fairness);
       if (fairness <= 1)
-	continue;
+	      continue;
 
       if (!aiger_literal_defined (private, fairness))
-	aiger_error_u (private, "fairness %u undefined", fairness);
+	      aiger_error_u (private, "fairness %u undefined", fairness);
     }
 }
 
@@ -794,15 +794,15 @@ aiger_check_justice_defined (aiger_private * private)
   for (i = 0; !private->error && i < public->num_justice; i++)
     {
       for (j = 0; !private->error && j < public->justice[i].size; j++)
-	{
-	  justice = public->justice[i].lits[j];
-	  justice = aiger_strip (justice);
-	  if (justice <= 1)
-	    continue;
+        {
+          justice = public->justice[i].lits[j];
+          justice = aiger_strip (justice);
+          if (justice <= 1)
+            continue;
 
-	  if (!aiger_literal_defined (private, justice))
-	    aiger_error_u (private, "justice %u undefined", justice);
-	}
+          if (!aiger_literal_defined (private, justice))
+            aiger_error_u (private, "justice %u undefined", justice);
+        }
     }
 }
 
@@ -825,63 +825,149 @@ aiger_check_for_cycles (aiger_private * private)
       type = private->types + i;
 
       if (!type->and || type->mark)
-	continue;
+        continue;
 
       PUSH (stack, top_stack, size_stack, i);
       while (top_stack)
-	{
-	  j = stack[top_stack - 1];
+        {
+          j = stack[top_stack - 1];
 
-	  if (j)
-	    {
-	      type = private->types + j;
-	      if (type->mark && type->onstack)
-		{
-		  aiger_error_u (private,
-				 "cyclic definition for and gate %u", j);
-		  break;
-		}
+          if (j)
+            {
+              type = private->types + j;
+              if (type->mark && type->onstack)
+                {
+                  aiger_error_u (private,
+                     "cyclic definition for and gate %u", j);
+                  break;
+                }
 
-	      if (!type->and || type->mark)
-		{
-		  top_stack--;
-		  continue;
-		}
+              if (!type->and || type->mark)
+                {
+                  top_stack--;
+                  continue;
+                }
 
-	      /* Prefix code.
-	       */
-	      type->mark = 1;
-	      type->onstack = 1;
-	      PUSH (stack, top_stack, size_stack, 0);
+              /* Prefix code.
+               */
+              type->mark = 1;
+              type->onstack = 1;
+              PUSH (stack, top_stack, size_stack, 0);
 
-	      assert (type->idx < public->num_ands);
-	      and = public->ands + type->idx;
+              assert (type->idx < public->num_ands);
+              and = public->ands + type->idx;
 
-	      tmp = aiger_lit2var (and->rhs0);
-	      if (tmp)
-		PUSH (stack, top_stack, size_stack, tmp);
+              tmp = aiger_lit2var (and->rhs0);
+              if (tmp)
+                PUSH (stack, top_stack, size_stack, tmp);
 
-	      tmp = aiger_lit2var (and->rhs1);
-	      if (tmp)
-		PUSH (stack, top_stack, size_stack, tmp);
-	    }
-	  else
-	    {
-	      /* All descendends traversed.  This is the postfix code.
-	       */
-	      assert (top_stack >= 2);
-	      top_stack -= 2;
-	      j = stack[top_stack];
-	      assert (j);
-	      type = private->types + j;
-	      assert (type->mark);
-	      assert (type->onstack);
-	      type->onstack = 0;
-	    }
-	}
+              tmp = aiger_lit2var (and->rhs1);
+              if (tmp)
+                PUSH (stack, top_stack, size_stack, tmp);
+            }
+          else
+            {
+              /* All descendends traversed.  This is the postfix code.
+               */
+              assert (top_stack >= 2);
+              top_stack -= 2;
+              j = stack[top_stack];
+              assert (j);
+              type = private->types + j;
+              assert (type->mark);
+              assert (type->onstack);
+              type->onstack = 0;
+            }
+        }
     }
 
   DELETEN (stack, size_stack);
+}
+
+void aiger_prune(aiger* public)
+{
+  IMPORT_private_FROM (public);
+
+  assert (!aiger_error (public));
+
+  aiger_type* type = 0;
+  aiger_type* tbegin = private->types + 1;
+  aiger_type* tend = private->types + 1 + public->maxvar;
+  aiger_symbol* out = 0;
+  aiger_symbol* obegin = public->outputs;
+  aiger_symbol* oend = public->outputs + public->num_outputs;
+  aiger_and* and = 0;
+  aiger_and* cursor = 0;
+  aiger_and* abegin = public->ands;
+  aiger_and* aend = public->ands + public->num_ands;
+
+  unsigned *stack = 0, size_stack = 0, top_stack = 0, var = 0;
+
+  /* Mark all output and gates */
+  for(type = tbegin; type != tend; type++)
+    type->mark = 0;
+  for(out = obegin; out != oend; out++)
+    {
+      var = aiger_lit2var(out->lit);
+      type = private->types + var;
+      if(type->and)
+        {
+          type->mark = 1;
+          PUSH(stack, top_stack, size_stack, var);
+        }
+    }
+
+  /* Traverse circuit and mark reachable and gates */
+  while(top_stack)
+    {
+      var = stack[--top_stack];
+      type = private->types + var;
+      assert(type->and);
+      assert(type->idx < public->num_ands);
+      and = public->ands + type->idx;
+      var = aiger_lit2var(and->rhs0);
+      type = private->types + var;
+      if(var && type->and && !type->mark)
+        {
+          type->mark = 1;
+          PUSH(stack, top_stack, size_stack, var);
+        }
+      var = aiger_lit2var(and->rhs1);
+      type = private->types + var;
+      if(var && type->and && !type->mark)
+        {
+          type->mark = 1;
+          PUSH(stack, top_stack, size_stack, var);
+        }
+    }
+  DELETEN(stack, size_stack);
+
+  /* Remove unreachable gates */
+  cursor = abegin;
+  for(and = abegin; and != aend; and++)
+    {
+      var = aiger_lit2var(and->lhs);
+      type = private->types + var;
+      assert(type->and);
+      if(type->mark)
+        {
+          cursor->lhs = and->lhs;
+          cursor->rhs0 = and->rhs0;
+          cursor->rhs1 = and->rhs1;
+          type->idx = (unsigned)(cursor - abegin);
+          cursor++;
+        }
+      else
+        {
+          type->and = 0;
+          type->idx = 0;
+        }
+    }
+  public->num_ands = (unsigned)(cursor - abegin);
+
+  /* Unmark all gates */
+  for(type = tbegin; type != tend; type++)
+    type->mark = 0;
 }
 
 const char *

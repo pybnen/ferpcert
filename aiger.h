@@ -269,6 +269,15 @@ int aiger_is_reencoded (aiger *);
 void aiger_reencode (aiger *);
 
 /*------------------------------------------------------------------------*/
+/* This function simplifies the circuit and removes all and gates that don't
+ * contribute to the outputs. It essentially traverses the circuit starting
+ * from the outputs, traverses the children and marks all traversed nodes.
+ * It then removes all unmarked nodes. The result is then a circuit without
+ * redundant nodes that lead nowhere.
+ */
+void aiger_prune(aiger *);
+
+/*------------------------------------------------------------------------*/
 /* This function computes the cone of influence (coi). The coi contains
  * those literals that may have an influence to one of the outputs.   A
  * variable 'v' is in the coi if the array returned as result is non zero at
