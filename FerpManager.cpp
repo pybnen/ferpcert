@@ -278,12 +278,14 @@ int FerpManager::extract(const Formula& qbf)
       auto lpiter = indicators.find(l_pos);
       auto lniter = indicators.find(l_neg);
       
-      assert(lniter == indicators.end() || lpiter == indicators.end());
+      assert(lniter != indicators.end() && lpiter == indicators.end() ||
+             lpiter != indicators.end() && lniter == indicators.end());
       
       uint32_t ind = (lniter == indicators.end()) ? aiger_true : aiger_false;
       
       aiger_add_and(aig, aiger_var2lit(*vit), ind, ind);
       aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
+      triv_out.insert(aiger_var2lit(*vit));
     }
     qinit = 1;
   }
@@ -528,8 +530,11 @@ void FerpManager::checkOscilation()
 {
   std::set<uint32_t> permanent;
   std::set<uint32_t> temporary;
+
   for(int oi = 0; oi < aig->num_outputs; oi++)
   {
+    if(triv_out.find(aig->outputs[oi].lit) != triv_out.end()) continue;
+
     temporary.clear();
     auto n_iter = inv_node_cache.find(aig->outputs[oi].lit);
     assert(n_iter != inv_node_cache.end());

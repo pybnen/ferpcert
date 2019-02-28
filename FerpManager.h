@@ -39,6 +39,7 @@ private:
   std::map<Lit, std::vector<Var>> indicators;            ///< Maps from annotation value to propositional variables
   std::unordered_map<uint64_t, uint32_t> node_cache;     ///< Cache Map for reusing AND gates
   std::unordered_map<uint32_t, uint64_t> inv_node_cache; ///< Inverse of node_cache
+  std::set<uint64_t> triv_out;                           ///< Trivial outputs
   enum Redundancy {RED_NONE, RED_FALSE, RED_OTHER};      ///< Used for signaling in find_redundant
 #endif
   
