@@ -55,9 +55,9 @@ private:
   inline uint32_t makeAND(uint32_t a, uint32_t b);
   inline uint32_t makeOR(uint32_t a, uint32_t b);
   inline uint32_t newVar();
-  Redundancy find_redundant(uint32_t a, uint32_t b);
+  Redundancy findRedundant(uint32_t a, uint32_t b);
   void checkOscilationHelper(std::set<uint32_t>& permanent, std::set<uint32_t>& temporary, uint32_t current);
-  void checkOscilation();
+  void checkOscillation();
 #endif
 public:
   inline FerpManager();
@@ -100,7 +100,10 @@ inline uint32_t FerpManager::makeITE(uint32_t cond, uint32_t then_b, uint32_t el
     return then_b;
   if(cond == aiger_false)
     return else_b;
-  
+  if(then_b == else_b)
+    return then_b;
+
+
   uint32_t t = makeAND(cond, then_b);
   uint32_t e = makeAND(aiger_not(cond), else_b);
   return makeOR(t, e);
@@ -123,13 +126,13 @@ inline uint32_t FerpManager::makeAND(uint32_t a, uint32_t b)
   // look for redundancy in form of  a & (a & x), a & (!a & x), ...
   
   Redundancy red = RED_NONE;
-  red = find_redundant(a, b);
+  red = findRedundant(a, b);
   if(red == RED_FALSE)
     return aiger_false;
   if(red == RED_OTHER)
     return b;
   
-  red = find_redundant(b, a);
+  red = findRedundant(b, a);
   if(red == RED_FALSE)
     return aiger_false;
   if(red == RED_OTHER)

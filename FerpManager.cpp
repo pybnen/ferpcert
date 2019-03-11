@@ -8,6 +8,10 @@
 
 #include "FerpManager.h"
 
+#define DEBUG 1
+#define debugf(fmt, ...) \
+            do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
+
 FerpManager::~FerpManager()
 {
   for(std::vector<Lit>* a : annotations)
@@ -329,13 +333,15 @@ int FerpManager::extract(const Formula& qbf)
       // the clause is satisfied by assignment if the part of the clause
       // containing literals from previous existential quantifiers is satisfied
       top[ci] = aiger_not(out);
-      
+      debugf("top value for %d : %d\n", ci, top[ci]);
       // active/cumulative if not assigned, and clause is not satisfied by assignment
       for(uint32_t li = 0; li < clause->size(); li++)
       {
         const Var prop_v = var(clause->at(li));
         uint32_t a = (qbf.getVarDepth(prop_to_original[prop_v]) < qi) ? aiger_false : out;
-        
+
+        debugf("active, cumulative for %d_%d : %d\n", prop_v, ci, a);
+
         active[ci][prop_v] = a;
         cumulative[ci][prop_v] = a;
       }
@@ -376,20 +382,32 @@ int FerpManager::extract(const Formula& qbf)
         uint32_t cond2 = makeAND(aiger_not(active[parent1][pivot]), aiger_not(top[parent1]));
         // parent 2 is not true and does not have active pivot
         uint32_t cond3 = makeAND(aiger_not(active[parent2][pivot]), aiger_not(top[parent2]));
-        
+
+        debugf("conditions: %d %d %d\n", cond1, cond2, cond3);
+
         // clause is set to true if none of the conditions apply
         top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
-        
+
+        debugf("top value for %d : %d\n", ci, top[ci]);
+
         for(uint32_t vi = 1; vi < num_prop; vi++)
         {
-          if(vi == pivot) continue; // pivot cannot be active in the resolvent
+          if(vi == pivot) // pivot cannot be active in the resolvent
+          {
+            active[ci][vi] = aiger_false;
+            continue;
+          }
           
           // optimisation: condition 3 is true and variable is active in parent 2
           uint32_t else_branch = makeAND(cond3, active[parent2][vi]);
           // active in either parent
           uint32_t resolv = makeOR(active[parent1][vi], active[parent2][vi]);
           // big if then else for deciding from where the activity comes
-          active[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, active[parent1][vi], else_branch));
+          uint32_t interm = makeITE(cond2, active[parent1][vi], else_branch);
+          debugf("%d = if %d then %d else %d\n", interm, cond2, active[parent1][vi], else_branch);
+          active[ci][vi] = makeITE(cond1, resolv, interm);
+          debugf("%d = if %d then %d else %d\n", active[ci][vi], cond1, resolv, interm);
+          debugf("active for %d_%d : %d\n", vi, ci, active[ci][vi]);
         }
     
         for(uint32_t vi = 1; vi < num_prop; vi++)
@@ -397,13 +415,17 @@ int FerpManager::extract(const Formula& qbf)
           // same as above but pivots are not treated differently from normal variables
           uint32_t else_branch = makeAND(cond3, cumulative[parent2][vi]);
           uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
-          cumulative[ci][vi] = makeITE(cond1, resolv, makeITE(cond2, cumulative[parent1][vi], else_branch));
+          uint32_t interm = makeITE(cond2, cumulative[parent1][vi], else_branch);
+          debugf("%d = if %d then %d else %d\n", interm, cond2, cumulative[parent1][vi], else_branch);
+          cumulative[ci][vi] = makeITE(cond1, resolv, interm);
+          debugf("%d = if %d then %d else %d\n", cumulative[ci][vi], cond1, resolv, interm);
+          debugf("cumulative for %d_%d : %d\n", vi, ci, cumulative[ci][vi]);
         }
       }
     }
 
     // go through all variable of this quantifier and look through the cumulative activities at the root node
-    // indicators for var being true are the cumulatives of prop. variables which are annotated with var = true
+    // indicators for var being true are the cumulative of prop. variables which are annotated with var = true
     // a corresponding definition applies to indicators of var being false
     // the output for the variable is then pos_ind & -neg_ind
     for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++)
@@ -437,7 +459,7 @@ int FerpManager::extract(const Formula& qbf)
         else if(neg_ind == aiger_true || neg_ind == aiger_false)
           solution = neg_ind;
         else
-          solution = (lpiter->second.size() < lniter->second.size()) ? pos_ind : neg_ind;
+          solution = pos_ind; // (lpiter->second.size() < lniter->second.size()) ? pos_ind : neg_ind;
       }
       aiger_add_and(aig, aiger_var2lit(*vit), solution, solution);
       uint64_t node = make_node(solution, solution);
@@ -446,7 +468,7 @@ int FerpManager::extract(const Formula& qbf)
       aiger_add_output(aig, aiger_var2lit(*vit), nullptr);
     }
   }
-  checkOscilation();
+  checkOscillation();
   aiger_prune(aig);
   return 0;
 }
@@ -504,7 +526,7 @@ void FerpManager::collectIndicators()
   }
 }
 
-FerpManager::Redundancy FerpManager::find_redundant(uint32_t a, uint32_t b)
+FerpManager::Redundancy FerpManager::findRedundant(uint32_t a, uint32_t b)
 {
   if(aiger_sign(b) == 1) return RED_NONE;
   
@@ -520,13 +542,13 @@ FerpManager::Redundancy FerpManager::find_redundant(uint32_t a, uint32_t b)
     return RED_FALSE;
   
   // if we still don't have a match, try DFS into children
-  Redundancy rec = find_redundant(a, left);
+  Redundancy rec = findRedundant(a, left);
   if(rec != RED_NONE) return rec;
   
-  return find_redundant(a, right);
+  return findRedundant(a, right);
 }
 
-void FerpManager::checkOscilation()
+void FerpManager::checkOscillation()
 {
   std::set<uint32_t> permanent;
   std::set<uint32_t> temporary;
@@ -538,7 +560,7 @@ void FerpManager::checkOscilation()
     temporary.clear();
     auto n_iter = inv_node_cache.find(aig->outputs[oi].lit);
     assert(n_iter != inv_node_cache.end());
-    printf("checking output %d\n", n_iter->first);
+    debugf("checking output %d\n", n_iter->first);
     checkOscilationHelper(permanent, temporary, n_iter->first);
   }
 }
