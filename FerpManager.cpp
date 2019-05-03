@@ -8,7 +8,7 @@
 
 #include "FerpManager.h"
 
-#define DEBUG 1
+#define DEBUG 0
 #define debugf(fmt, ...) \
             do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
@@ -265,10 +265,63 @@ int FerpManager::extract(const Formula& qbf)
   
   std::vector<std::vector<uint32_t>> active(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
   std::vector<std::vector<uint32_t>> cumulative(trace_clauses.size(), std::vector<uint32_t>(num_prop, aiger_false));
-  
+
   std::vector<uint32_t> top(trace_clauses.size(), aiger_false);
   std::vector<bool> mark;
-  
+  mark.clear(); mark.resize(trace_clauses.size(), false);
+
+  // prepare active, cumulative data structures
+  {
+    // handle leaves
+    for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+    {
+      if(pivots[ci] != 0) continue;
+
+      mark[ci] = true;
+      const std::vector<Lit>* clause = trace_clauses[ci];
+      for(uint32_t li = 0; li < clause->size(); li++)
+      {
+        const Var prop_v = var(clause->at(li));
+        active[ci][prop_v] = aiger_true;
+        cumulative[ci][prop_v] = aiger_true;
+      }
+    }
+    // handle nodes in topological order
+    bool updated = true;
+    while(updated)
+    {
+      updated = false;
+
+      for(uint32_t ci = 1; ci < trace_clauses.size(); ci++)
+      {
+        if(mark[ci]) continue;
+
+        uint32_t parent1 = antecedents[ci]->at(0);
+        uint32_t parent2 = antecedents[ci]->at(1);
+        Var pivot = pivots[ci];
+        assert(pivot != 0);
+
+        if(!mark[parent1] || !mark[parent2]) continue;
+
+        mark[ci] = true;
+        updated = true;
+
+        const std::vector<Lit>* clause = trace_clauses[ci];
+
+        for(uint32_t li = 0; li < clause->size(); li++)
+        {
+          const Var prop_v = var(clause->at(li));
+          active[ci][prop_v] = aiger_true;
+        }
+
+        for(uint32_t vi = 1; vi < num_prop; vi++)
+        {
+          cumulative[ci][vi] = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
+        }
+      }
+    }
+  }
+
   // special handling for universal variables which are in the first block
   uint32_t qinit = 0;
   const Quant* quant0 = qbf.getQuant(0);
@@ -386,7 +439,7 @@ int FerpManager::extract(const Formula& qbf)
         debugf("conditions: %d %d %d\n", cond1, cond2, cond3);
 
         // clause is set to true if none of the conditions apply
-        top[ci] = makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3));
+        top[ci] = makeOR(top[ci], makeAND(makeAND(aiger_not(cond1), aiger_not(cond2)), aiger_not(cond3)));
 
         debugf("top value for %d : %d\n", ci, top[ci]);
 
@@ -405,7 +458,7 @@ int FerpManager::extract(const Formula& qbf)
           // big if then else for deciding from where the activity comes
           uint32_t interm = makeITE(cond2, active[parent1][vi], else_branch);
           debugf("%d = if %d then %d else %d\n", interm, cond2, active[parent1][vi], else_branch);
-          active[ci][vi] = makeITE(cond1, resolv, interm);
+          active[ci][vi] = makeAND(active[ci][vi], makeITE(cond1, resolv, interm));
           debugf("%d = if %d then %d else %d\n", active[ci][vi], cond1, resolv, interm);
           debugf("active for %d_%d : %d\n", vi, ci, active[ci][vi]);
         }
@@ -417,7 +470,7 @@ int FerpManager::extract(const Formula& qbf)
           uint32_t resolv = makeOR(cumulative[parent1][vi], cumulative[parent2][vi]);
           uint32_t interm = makeITE(cond2, cumulative[parent1][vi], else_branch);
           debugf("%d = if %d then %d else %d\n", interm, cond2, cumulative[parent1][vi], else_branch);
-          cumulative[ci][vi] = makeITE(cond1, resolv, interm);
+          cumulative[ci][vi] = makeAND(cumulative[ci][vi], makeITE(cond1, resolv, interm));
           debugf("%d = if %d then %d else %d\n", cumulative[ci][vi], cond1, resolv, interm);
           debugf("cumulative for %d_%d : %d\n", vi, ci, cumulative[ci][vi]);
         }
