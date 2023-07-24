@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <algorithm>
+#include <iostream>
+#include <vector>
 
 #include "FerpManager.h"
 
@@ -47,8 +49,8 @@ int FerpManager::addClause(uint32_t id, std::vector<Lit>* clause, std::array<uin
 {
   if (!cnf_id_to_trace_id.insert(std::pair<uint32_t, uint32_t>(id, trace_clauses.size())).second) return 1;
   trace_id_to_cnf_id.push_back(id);
-  for(const Lit l : *clause)
-    if(prop_to_original.find(var(l)) == prop_to_original.end()) return 2;
+  // for(const Lit l : *clause)
+  //   if(prop_to_original.find(var(l)) == prop_to_original.end()) return 2;
   
   if(root != 0 && clause->empty()) return 3;
   
@@ -62,74 +64,170 @@ int FerpManager::addClause(uint32_t id, std::vector<Lit>* clause, std::array<uin
   return 0;
 }
 
+bool FerpManager::isHelper(Var v)
+{
+  for (const auto &pair : prop_to_original)
+  {
+    auto key = pair.first;
+    if (v == key) {
+      return false;
+    }
+  }
+  return true;
+}
+
 #ifdef FERP_CHECK
 int FerpManager::check(const Formula& qbf)
 {
-  for(uint32_t i = 1; i < trace_clauses.size(); i++)
+  uint32_t origin_idx = 0;
+  for (auto clause : nor_clauses)
   {
-    if(antecedents[i]->at(1) == 0)
-    {
-      // clause comes from axiom rule
-      int res = checkExpansion(qbf, i);
-      if (res) return res;
-    }
-    else
-    {
-      // clause comes from res rule
-      int res = checkResolution(i);
-      if (res) return res;
-    }
+    // clause comes from axiom rule
+    int res = checkExpansion(qbf, clause, origin_idx);
+    if (res) return res;
+    origin_idx += 1;
   }
-  
+
+  for (auto i : res_clause_ids)
+  {
+    // clause comes from res rule
+    int res = checkResolution(i);
+    if (res) return res;
+  }
+
   // check whether every clause is reachable
-  int res = checkRedundant();
-  if (res) return res;
+  // int res = checkRedundant();
+  // if (res) return res;
   
   return 0;
 }
 
-int FerpManager::checkExpansion(const Formula& qbf, uint32_t index)
+int FerpManager::checkExpansion(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx)
 {
-  // check if original id exists and existential part size
-  const std::vector<Lit>* prop_clause = trace_clauses[index];
-  uint32_t orig_id = antecedents[index]->at(0) - 1;
-  if(orig_id >= qbf.numClauses()) return 1;
-  const Clause* qbf_clause = qbf.getClause(orig_id);
-  if(qbf_clause->size_e != prop_clause->size()) return 2;
+  // on stack
+  std::vector<Lit> assignment;
   
-  // generate existential part of original clause
-  orig_ex.clear();
-  for(const Lit l : *prop_clause)
-    orig_ex.push_back(make_lit(prop_to_original[var(l)], sign(l)));
-  std::sort(orig_ex.begin(), orig_ex.end(), lit_order);
-  
-  // check if clauses are the same
-  {
-    const_lit_iterator li1 = qbf_clause->begin_e();
-    auto li2 = orig_ex.begin();
-    for(; li1 < qbf_clause->end_e() && li2 != orig_ex.end(); li1++, li2++)
-      if(*li1 != *li2) return 3;
-  }
-  
-  // todo: can be implemented much more efficiently
-  // collect annotations of clause
-  std::set<std::vector<Lit>*> added_anots;
-  for(auto li = prop_clause->begin(); li != prop_clause->end(); li++)
-    added_anots.insert(prop_to_annotation[var(*li)]);
-  
-  std::set<Lit> clause_anot;
-  for(const std::vector<Lit>* a : added_anots)
-    for(const Lit l : *a)
-    {
-      if(clause_anot.find(negate(l)) != clause_anot.end()) return 4;
-      clause_anot.insert(l);
+  // const std::vector<Lit>* prop_clause = trace_clauses[index];
+  auto orignal_clauses = original_clause_mapping[origin_idx];
+  assert(prop_clause->size() == orignal_clauses->size());
+
+  auto it1 = prop_clause->begin();
+  auto it2 = orignal_clauses->begin();
+  auto end1 = prop_clause->end();
+  auto end2 = orignal_clauses->end();
+
+  while (it1 != end1 && it2 != end2) {
+    auto lit = *it1;
+    auto origin = *it2;
+
+    // create literal array, if helper variable
+    std::vector<Lit> literal_array;
+    if (isHelper(var(lit))) {
+      assert(sign(lit));
+      for (auto l : *helper_variable_mapping[var(lit)]) {
+        literal_array.push_back(l);
+      }
+    } else {
+      literal_array.push_back(lit);
     }
-  
-  // check if the negated universals are in clause annotation
-  for(const_lit_iterator li = qbf_clause->begin_a(); li < qbf_clause->end_a(); li++)
-    if(clause_anot.find(negate(*li)) == clause_anot.end()) return 5;
-  
+
+    const Clause* qbf_clause = qbf.getClause(origin - 1);
+    if(qbf_clause->size_a != literal_array.size()) return 2;
+
+    orig_ex.clear();    
+    for (auto litt : literal_array) {      
+      for (auto annotation : *prop_to_annotation[var(litt)]) {
+        if (std::find(assignment.begin(), assignment.end(), annotation) == assignment.end()) {
+          assignment.push_back(annotation);
+        }
+      }      
+      orig_ex.push_back(make_lit(prop_to_original[var(litt)], sign(litt)));      
+    }
+    std::sort(orig_ex.begin(), orig_ex.end(), lit_order);
+    
+    // check if clauses are negated
+    {
+      const_lit_iterator li1 = qbf_clause->begin_a();
+      auto li2 = orig_ex.begin();
+      for(; li1 < qbf_clause->end_a() && li2 != orig_ex.end(); li1++, li2++)
+        if(*li1 != -(*li2)) return 3;
+    }
+    
+    // add all existentials negated to current assignment
+    {
+      for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
+        if (std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
+          assignment.push_back(negate(*ex_it));
+        }
+      }
+    }
+
+    it1 += 1;
+    it2 += 1;
+  }
+  checkElimination(qbf, origin_idx, assignment);
   return 0;
+}
+
+int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::vector<Lit> assignment)
+{  
+  // For each clause in ϕ not referenced by the nor clause,
+  auto orignal_clauses = original_clause_mapping[origin_idx];
+  std::vector<bool> eliminated(qbf.numClauses(), false);
+  for (auto original : *orignal_clauses) {
+    eliminated[original - 1] = true;
+  }
+  bool new_eliminated = true;
+
+  while (new_eliminated) {
+    new_eliminated = false;
+    for (auto i = 0; i < qbf.numClauses(); i++) {
+      if (eliminated[i]) {
+        continue;
+      }
+      const Clause* qbf_clause = qbf.getClause(i);
+
+      // check eliminte
+      for (auto lit : assignment) {
+        if (std::find(qbf_clause->begin_e(), qbf_clause->end_e(), lit) != qbf_clause->end_e()) {
+          eliminated[i] = true;
+          new_eliminated = true;
+          break;
+        }
+      }
+      if (eliminated[i]) continue;
+
+      // If not, check if there are existential literals in the clause, that are not in the current assignment.  
+      // If there is only one, add the literal to the assignment array, now the assignment eliminates the current clause.  
+      {
+        std::vector<Lit> ex_lit_not_in_assignment;
+        for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
+          if (std::find(assignment.begin(), assignment.end(), *ex_it) == assignment.end() &&
+              std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
+            ex_lit_not_in_assignment.push_back(*ex_it);
+          }
+        }
+        if (ex_lit_not_in_assignment.size() == 1) {
+          assignment.push_back(ex_lit_not_in_assignment[0]);
+          eliminated[i] = true;
+          new_eliminated = true;
+        }
+      }
+    }
+  }
+
+  // Check that the assignment array does not contain a literal and its negated literal.
+  for (auto lit : assignment) {
+    if (std::find(assignment.begin(), assignment.end(), negate(lit)) != assignment.end()) {
+      return 101;
+    }
+  }
+
+  auto all_eliminated = std::all_of(eliminated.begin(), eliminated.end(), [](bool b) { return b; });
+  if (all_eliminated) {
+    return 0;
+  }
+  return 102;
 }
 
 int FerpManager::checkResolution(uint32_t index)

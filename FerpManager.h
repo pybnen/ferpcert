@@ -25,7 +25,6 @@ private:
   std::map<Var, std::vector<Lit>*> prop_to_annotation;
   std::vector<std::vector<Lit>*> annotations;
   
-  std::vector<std::vector<Lit>*> trace_clauses;      ///< Clauses as they appear in the trace
   std::vector<uint32_t> trace_id_to_cnf_id;          ///< Clause ids as they appear in the trace
   std::map<uint32_t, uint32_t> cnf_id_to_trace_id;   ///< Lookup table in other direction
   std::vector<std::array<uint32_t, 2>*> antecedents; ///< Stores antecedents of each trace clause
@@ -44,8 +43,9 @@ private:
 #endif
   
 #ifdef FERP_CHECK
-  int checkExpansion(const Formula& qbf, uint32_t index);
+  int checkExpansion(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx);
   int checkResolution(uint32_t index);
+  int checkElimination(const Formula& qbf, uint32_t origin_idx, std::vector<Lit> assignment);
   int checkRedundant();
 #endif
 #ifdef FERP_CERT
@@ -62,6 +62,15 @@ private:
 public:
   inline FerpManager();
   ~FerpManager();
+
+  /** maps helper variables to literals of clause that introduces the helper variable */
+  std::map<Var, std::vector<Lit>*> helper_variable_mapping;
+  std::vector<std::vector<Lit>*> nor_clauses;
+  std::vector<uint32_t> res_clause_ids;
+  std::vector<std::vector<uint32_t>*>  original_clause_mapping;
+  bool isHelper(Var v);
+
+  std::vector<std::vector<Lit>*> trace_clauses;      ///< Clauses as they appear in the trace
   
   int addVariables(const std::vector<Var>& prop, const std::vector<Var>& orig, const std::vector<Lit>& anno);
   int addClause(uint32_t id, std::vector<Lit>* clause, std::array<uint32_t, 2>* ante);
