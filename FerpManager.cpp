@@ -165,7 +165,10 @@ int FerpManager::checkExpansion(const Formula& qbf, std::vector<Lit>* prop_claus
     it1 += 1;
     it2 += 1;
   }
-  checkElimination(qbf, origin_idx, assignment);
+  
+  auto res = checkElimination(qbf, origin_idx, assignment);
+  if (res != 0) return res;
+
   return 0;
 }
 
@@ -233,16 +236,27 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
 int FerpManager::checkResolution(uint32_t index)
 {
   const std::vector<Lit>* prop_clause = trace_clauses[index];
-  const std::vector<Lit>* parent1 = trace_clauses[cnf_id_to_trace_id[antecedents[index]->at(0)]];
-  const std::vector<Lit>* parent2 = trace_clauses[cnf_id_to_trace_id[antecedents[index]->at(1)]];
+  const std::vector<Lit>* _parent1 = trace_clauses[cnf_id_to_trace_id[antecedents[index]->at(0)]];
+  const std::vector<Lit>* _parent2 = trace_clauses[cnf_id_to_trace_id[antecedents[index]->at(1)]];
+
+  std::vector<Lit> parent1;
+  for (auto lit : *_parent1) {
+    if (std::find(parent1.begin(), parent1.end(), lit) == parent1.end())
+      parent1.push_back(lit);
+  }
+  std::vector<Lit> parent2;
+  for (auto lit : *_parent2) {
+    if (std::find(parent2.begin(), parent2.end(), lit) == parent2.end())
+      parent2.push_back(lit);
+  }
   
   // find the pivot and check resolvent at the same time
   std::vector<Var> pivot_candidates;
-  auto li1 = parent1->begin();
-  auto li2 = parent2->begin();
+  auto li1 = parent1.begin();
+  auto li2 = parent2.begin();
   auto res = prop_clause->begin();
   
-  while(li1 != parent1->end() && li2 != parent2->end())
+  while(li1 != parent1.end() && li2 != parent2.end())
   {
     const Var v1 = var(*li1);
     const Var v2 = var(*li2);
@@ -272,13 +286,13 @@ int FerpManager::checkResolution(uint32_t index)
   }
   
   // check if the rest of the elements are present
-  while(li1 != parent1->end())
+  while(li1 != parent1.end())
   {
     if(*li1 != *res) return 9;
     li1++; res++;
   }
   
-  while(li2 != parent2->end())
+  while(li2 != parent2.end())
   {
     if(*li2 != *res) return 10;
     li2++; res++;
