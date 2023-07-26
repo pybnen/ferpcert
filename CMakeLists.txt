@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 project(ferpcheck)
 
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-parentheses")
 
 set(COMMON_FILES
     common.h
@@ -33,15 +34,26 @@ set(FERPCERT_FILES
     aiger.h
         )
 
+add_definitions(-DUSE_GLUCOSE)
+list(APPEND COMMON_FILES "ipasir/ipasir-glucose4.cc")
+
 add_executable(ferpcheck ${COMMON_FILES} ${FERPCHECK_FILES})
 add_executable(ferpcert ${COMMON_FILES} ${FERPCERT_FILES})
+
+target_include_directories(ferpcheck PRIVATE "./glucose-syrup/")
+target_link_directories(ferpcheck PRIVATE "./glucose-syrup/simp")
+
+set(LIBS "-lz")
+list(APPEND LIBS "glucose")
 
 find_package( ZLIB REQUIRED )
 if ( ZLIB_FOUND )
     include_directories( ${ZLIB_INCLUDE_DIRS} )
-    target_link_libraries( ferpcheck ${ZLIB_LIBRARIES} )
-    target_link_libraries( ferpcert ${ZLIB_LIBRARIES} )
+    list(APPEND LIBS ${ZLIB_LIBRARIES})
 endif( ZLIB_FOUND )
+
+target_link_libraries(ferpcheck PRIVATE ${LIBS})
+target_link_libraries(ferpcert PRIVATE ${LIBS})
 
 set_target_properties(ferpcheck PROPERTIES COMPILE_DEFINITIONS "FERP_CHECK")
 set_target_properties(ferpcert PROPERTIES COMPILE_DEFINITIONS "FERP_CERT")
