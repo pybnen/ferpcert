@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <iostream>
 #include <vector>
+#include "ipasir.hh"
 
 #include "FerpManager.h"
 
@@ -180,54 +181,91 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
   for (auto original : *orignal_clauses) {
     eliminated[original - 1] = true;
   }
-  bool new_eliminated = true;
 
-  while (new_eliminated) {
-    new_eliminated = false;
-    for (auto i = 0; i < qbf.numClauses(); i++) {
-      if (eliminated[i]) {
-        continue;
-      }
-      const Clause* qbf_clause = qbf.getClause(i);
+  // bool new_eliminated = true;
+  // while (new_eliminated) {
+  //   new_eliminated = false;
+  //   for (unsigned i = 0; i < qbf.numClauses(); i++) {
+  //     if (eliminated[i]) {
+  //       continue;
+  //     }
+  //     const Clause* qbf_clause = qbf.getClause(i);
 
-      // check eliminte
-      for (auto lit : assignment) {
-        if (std::find(qbf_clause->begin_e(), qbf_clause->end_e(), lit) != qbf_clause->end_e()) {
-          eliminated[i] = true;
-          new_eliminated = true;
-          break;
-        }
-      }
-      if (eliminated[i]) continue;
+  //     // check eliminte
+  //     for (auto lit : assignment) {
+  //       if (std::find(qbf_clause->begin_e(), qbf_clause->end_e(), lit) != qbf_clause->end_e()) {
+  //         eliminated[i] = true;
+  //         new_eliminated = true;
+  //         break;
+  //       }
+  //     }
+  //     if (eliminated[i]) continue;
 
-      // If not, check if there are existential literals in the clause, that are not in the current assignment.  
-      // If there is only one, add the literal to the assignment array, now the assignment eliminates the current clause.  
-      {
-        std::vector<Lit> ex_lit_not_in_assignment;
-        for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
-          if (std::find(assignment.begin(), assignment.end(), *ex_it) == assignment.end() &&
-              std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
-            ex_lit_not_in_assignment.push_back(*ex_it);
-          }
-        }
-        if (ex_lit_not_in_assignment.size() == 1) {
-          assignment.push_back(ex_lit_not_in_assignment[0]);
-          eliminated[i] = true;
-          new_eliminated = true;
-        }
-      }
+  //     // If not, check if there are existential literals in the clause, that are not in the current assignment.  
+  //     // If there is only one, add the literal to the assignment array, now the assignment eliminates the current clause.  
+  //     {
+  //       std::vector<Lit> ex_lit_not_in_assignment;
+  //       for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
+  //         if (std::find(assignment.begin(), assignment.end(), *ex_it) == assignment.end() &&
+  //             std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
+  //           ex_lit_not_in_assignment.push_back(*ex_it);
+  //         }
+  //       }
+  //       if (ex_lit_not_in_assignment.size() == 1) {
+  //         assignment.push_back(ex_lit_not_in_assignment[0]);
+  //         eliminated[i] = true;
+  //         new_eliminated = true;
+  //       }
+  //     }
+  //   }
+  // }
+
+  // // Check that the assignment array does not contain a literal and its negated literal.
+  // for (auto lit : assignment) {
+  //   if (std::find(assignment.begin(), assignment.end(), negate(lit)) != assignment.end()) {
+  //     return 101;
+  //   }
+  // }
+
+  // auto all_eliminated = std::all_of(eliminated.begin(), eliminated.end(), [](bool b) { return b; });
+  // if (all_eliminated) {
+  //   return 0;
+  // }
+
+  void *sat_solver = ipasir_init();
+  // add the existential part of the clauses that needs to be eliminated
+  for (unsigned i = 0; i < qbf.numClauses(); i++) {        
+    if (eliminated[i]) {
+      continue;
     }
-  }
 
-  // Check that the assignment array does not contain a literal and its negated literal.
+    const Clause* qbf_clause = qbf.getClause(i);
+    for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
+      ipasir_add(sat_solver, *ex_it);
+    }
+    ipasir_add(sat_solver, 0);
+  }
+  
+  // add the current assignment
   for (auto lit : assignment) {
-    if (std::find(assignment.begin(), assignment.end(), negate(lit)) != assignment.end()) {
-      return 101;
-    }
+    ipasir_add(sat_solver, lit);
+    ipasir_add(sat_solver, 0);
   }
 
-  auto all_eliminated = std::all_of(eliminated.begin(), eliminated.end(), [](bool b) { return b; });
-  if (all_eliminated) {
+  auto is_sat = ipasir_solve(sat_solver) == 10;
+  if (is_sat) {
+    std::cout << "Assignment: ";
+    for (Var i = 1; i <= qbf.numVars(); i++) {
+      if (qbf.isExistential(i)) {
+        Lit lit = ipasir_val(sat_solver, i);
+        std::cout << lit << " ";   
+      }         
+    }
+    std::cout << std::endl;  
+  }
+  ipasir_release(sat_solver);
+
+  if (is_sat) {
     return 0;
   }
   return 102;
