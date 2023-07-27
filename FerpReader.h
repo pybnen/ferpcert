@@ -12,8 +12,9 @@ class FerpReader : protected Reader
 private:
   int readExpansions(FerpManager& mngr);
   int readResolutions(FerpManager& mngr);
-  int readClause(FerpManager& mngr, bool expansion_part);
-  void consumeSATLine();
+  int readClause(FerpManager& mngr);
+  int readClauseSAT(FerpManager& mngr, bool expansion_part);
+  void readSATLine(FerpManager& mngr);
 public:
   int readFERP(FerpManager& mngr);
   FerpReader(gzFile& file) : Reader(file) {};

@@ -43,10 +43,13 @@ private:
 #endif
   
 #ifdef FERP_CHECK
-  int checkExpansion(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx);
+  int checkSAT(const Formula& qbf);
+  int checkUNSAT(const Formula& qbf);
+  int checkExpansionUNSAT(const Formula& qbf, uint32_t index);
   int checkResolution(uint32_t index);
-  int checkElimination(const Formula& qbf, uint32_t origin_idx, std::vector<Lit> assignment);
   int checkRedundant();
+  int checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx);
+  int checkElimination(const Formula& qbf, uint32_t origin_idx, std::vector<Lit> assignment);
 #endif
 #ifdef FERP_CERT
   void collectPivots();
@@ -63,6 +66,7 @@ public:
   inline FerpManager();
   ~FerpManager();
 
+  bool is_sat;
   /** maps helper variables to literals of clause that introduces the helper variable */
   std::map<Var, std::vector<Lit>*> helper_variable_mapping;
   std::vector<std::vector<Lit>*> nor_clauses;
@@ -86,7 +90,8 @@ public:
 //////////// INLINE IMPLEMENTATIONS ////////////
 
 FerpManager::FerpManager() :
-root(0)
+root(0),
+is_sat(false)
 #ifdef FERP_CERT
 , aig(nullptr), current_aig_var(0)
 #endif

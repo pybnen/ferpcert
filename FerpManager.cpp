@@ -50,9 +50,12 @@ int FerpManager::addClause(uint32_t id, std::vector<Lit>* clause, std::array<uin
 {
   if (!cnf_id_to_trace_id.insert(std::pair<uint32_t, uint32_t>(id, trace_clauses.size())).second) return 1;
   trace_id_to_cnf_id.push_back(id);
-  // for(const Lit l : *clause)
-  //   if(prop_to_original.find(var(l)) == prop_to_original.end()) return 2;
   
+  if (!is_sat) {
+    for(const Lit l : *clause)
+      if(prop_to_original.find(var(l)) == prop_to_original.end()) return 2;
+  }
+
   if(root != 0 && clause->empty()) return 3;
   
   if(clause->empty())
@@ -80,11 +83,20 @@ bool FerpManager::isHelper(Var v)
 #ifdef FERP_CHECK
 int FerpManager::check(const Formula& qbf)
 {
+  if (is_sat) {
+    return checkSAT(qbf);
+  } else {
+    return checkUNSAT(qbf);
+  }
+}
+
+int FerpManager::checkSAT(const Formula& qbf)
+{
   uint32_t origin_idx = 0;
   for (auto clause : nor_clauses)
   {
     // clause comes from axiom rule
-    int res = checkExpansion(qbf, clause, origin_idx);
+    int res = checkExpansionSAT(qbf, clause, origin_idx);
     if (res) return res;
     origin_idx += 1;
   }
@@ -95,17 +107,80 @@ int FerpManager::check(const Formula& qbf)
     int res = checkResolution(i);
     if (res) return res;
   }
+  return 0;
+}
 
+int FerpManager::checkUNSAT(const Formula& qbf)
+{
+  for(uint32_t i = 1; i < trace_clauses.size(); i++)
+  {
+    if(antecedents[i]->at(1) == 0)
+    {
+      // clause comes from axiom rule
+      int res = checkExpansionUNSAT(qbf, i);
+      if (res) return res;
+    }
+    else
+    {
+      // clause comes from res rule
+      int res = checkResolution(i);
+      if (res) return res;
+    }
+  }
+  
   // check whether every clause is reachable
-  // int res = checkRedundant();
-  // if (res) return res;
+  int res = checkRedundant();
+  if (res) return res;
   
   return 0;
 }
 
-int FerpManager::checkExpansion(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx)
+int FerpManager::checkExpansionUNSAT(const Formula& qbf, uint32_t index)
 {
-  // on stack
+  // check if original id exists and existential part size
+  const std::vector<Lit>* prop_clause = trace_clauses[index];
+  uint32_t orig_id = antecedents[index]->at(0) - 1;
+  if(orig_id >= qbf.numClauses()) return 1;
+  const Clause* qbf_clause = qbf.getClause(orig_id);
+  if(qbf_clause->size_e != prop_clause->size()) return 2;
+  
+  // generate existential part of original clause
+  orig_ex.clear();
+  for(const Lit l : *prop_clause)
+    orig_ex.push_back(make_lit(prop_to_original[var(l)], sign(l)));
+  std::sort(orig_ex.begin(), orig_ex.end(), lit_order);
+  
+  // check if clauses are the same
+  {
+    const_lit_iterator li1 = qbf_clause->begin_e();
+    auto li2 = orig_ex.begin();
+    for(; li1 < qbf_clause->end_e() && li2 != orig_ex.end(); li1++, li2++)
+      if(*li1 != *li2) return 3;
+  }
+  
+  // todo: can be implemented much more efficiently
+  // collect annotations of clause
+  std::set<std::vector<Lit>*> added_anots;
+  for(auto li = prop_clause->begin(); li != prop_clause->end(); li++)
+    added_anots.insert(prop_to_annotation[var(*li)]);
+  
+  std::set<Lit> clause_anot;
+  for(const std::vector<Lit>* a : added_anots)
+    for(const Lit l : *a)
+    {
+      if(clause_anot.find(negate(l)) != clause_anot.end()) return 4;
+      clause_anot.insert(l);
+    }
+  
+  // check if the negated universals are in clause annotation
+  for(const_lit_iterator li = qbf_clause->begin_a(); li < qbf_clause->end_a(); li++)
+    if(clause_anot.find(negate(*li)) == clause_anot.end()) return 5;
+  
+  return 0;
+}
+
+int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx)
+{
   std::vector<Lit> assignment;
   
   // const std::vector<Lit>* prop_clause = trace_clauses[index];

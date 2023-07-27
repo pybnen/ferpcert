@@ -6,10 +6,7 @@
 
 int FerpReader::readFERP(FerpManager& mngr)
 {
-  // TODO do not skip s line
-  // TOOD if s 1 check for sat, else if s 0 check for unsat
-  consumeSATLine();
-
+  readSATLine(mngr);
   if(readExpansions(mngr)) return 1;
   if(readResolutions(mngr)) return 2;
   return 0;
@@ -69,7 +66,13 @@ int FerpReader::readResolutions(FerpManager& mngr)
       continue;
     }
 
-    int res = readClause(mngr, expansion_part);
+    int res;
+    if (mngr.is_sat) {
+      res = readClauseSAT(mngr, expansion_part);
+    } else {
+      res = readClause(mngr);
+    }
+
     if (res)
     {
       printf("Reading clause failed with error code %d\n", res);
@@ -82,7 +85,42 @@ int FerpReader::readResolutions(FerpManager& mngr)
 
 #define clean(val) do {ret = val; goto cleanup;} while(0)
 
-int FerpReader::readClause(FerpManager& mngr, bool expansion_part)
+int FerpReader::readClause(FerpManager& mngr)
+{
+  int ret = 0;
+  std::vector<Lit>* clause = new std::vector<Lit>();
+  std::array<uint32_t, 2>* ante = new std::array<uint32_t, 2>();
+  
+  Lit l = 0;
+  uint32_t index = 0;
+  if (parseUnsigned(index)) clean(1);
+  while (true)
+  {
+    if (parseSigned(l)) clean(2);
+    if (l == 0) break;
+    clause->push_back(l);
+  }
+  
+  if (parseUnsigned(ante->at(0))) clean(3);
+  if (ante->at(0) == 0) clean(4);
+  if (parseUnsigned(ante->at(1))) clean(5);
+  if (ante->at(1) != 0)
+  {
+    if (parseSigned(l)) clean(6);
+    if (l != 0) clean(7);
+  }
+  
+  if (mngr.addClause(index, clause, ante)) clean(8);
+  return 0;
+cleanup:
+  delete clause;
+  delete ante;
+  return ret;
+}
+
+#define cleanSAT(val) do {ret = val; goto cleanupsat;} while(0)
+
+int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
 {
   int ret = 0;
   bool is_nor_clause = true;
@@ -94,10 +132,10 @@ int FerpReader::readClause(FerpManager& mngr, bool expansion_part)
   
   Lit l = 0;
   uint32_t index = 0;
-  if (parseUnsigned(index)) clean(1);
+  if (parseUnsigned(index)) cleanSAT(1);
   while (true)
   {
-    if (parseSigned(l)) clean(2);
+    if (parseSigned(l)) cleanSAT(2);
     if (l == 0) break;
     clause->push_back(l);
 
@@ -113,13 +151,13 @@ int FerpReader::readClause(FerpManager& mngr, bool expansion_part)
   
   if (!expansion_part)
   {
-    if (parseUnsigned(ante->at(0))) clean(3);
-    if (ante->at(0) == 0) clean(4);
-    if (parseUnsigned(ante->at(1))) clean(5);
+    if (parseUnsigned(ante->at(0))) cleanSAT(3);
+    if (ante->at(0) == 0) cleanSAT(4);
+    if (parseUnsigned(ante->at(1))) cleanSAT(5);
     // must contain 2 references
-    if (ante->at(0) == 0) clean(4);
-    if (parseSigned(l)) clean(6);
-    if (l != 0) clean(7);
+    if (ante->at(0) == 0) cleanSAT(4);
+    if (parseSigned(l)) cleanSAT(6);
+    if (l != 0) cleanSAT(7);
     mngr.res_clause_ids.push_back(mngr.trace_clauses.size()); 
   }
   else
@@ -127,7 +165,7 @@ int FerpReader::readClause(FerpManager& mngr, bool expansion_part)
     uint32_t original_clause_id = 0;
     while (true)
     {
-      if (parseUnsigned(original_clause_id)) clean(3);
+      if (parseUnsigned(original_clause_id)) cleanSAT(3);
       if (original_clause_id == 0) break;
       original_clause_ids->push_back(original_clause_id);
     }
@@ -153,15 +191,21 @@ int FerpReader::readClause(FerpManager& mngr, bool expansion_part)
     }
   }
   
-  if (mngr.addClause(index, clause, ante)) clean(8);
+  if (mngr.addClause(index, clause, ante)) cleanSAT(8);
   return 0;
-cleanup:
+cleanupsat:
   delete clause;
   delete ante;
   return ret;
 }
 
-void FerpReader::consumeSATLine()
+void FerpReader::readSATLine(FerpManager& mngr)
 {
-  while (*stream == 's') skipLine(stream);
+  while (*stream == 's') {
+    ++stream;
+    skipWhitespace(stream);
+    unsigned is_sat;
+    parseUnsigned(is_sat);
+    mngr.is_sat = (is_sat == 1);
+  }
 }
