@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 project(ferpcheck)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-parentheses")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-parentheses -O3")
 
 set(COMMON_FILES
     common.h
