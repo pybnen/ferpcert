@@ -3,6 +3,18 @@
 
 #include "FerpReader.h"
 #include "QbfReader.h"
+#include <sys/resource.h>
+
+// taken from qrpcheck
+static inline double read_cpu_time()
+{
+  struct rusage u;
+  if (getrusage (RUSAGE_SELF, &u))
+    return 0;
+  return u.ru_utime.tv_sec + 1e-6 * u.ru_utime.tv_usec +
+         u.ru_stime.tv_sec + 1e-6 * u.ru_stime.tv_usec;
+}
+
 
 int main(int argc, const char* argv[])
 {
@@ -15,6 +27,8 @@ int main(int argc, const char* argv[])
   const char* qbf_name = argv[1];
   const char* ferp_name = argv[2];
   
+  double start_time = read_cpu_time();
+
   gzFile qbf_file = gzopen(qbf_name, "rb");
   
   if (qbf_file == Z_NULL)
@@ -63,5 +77,7 @@ int main(int argc, const char* argv[])
     return res;
   }
   
+  double cpu_time = read_cpu_time() - start_time;
+  printf("FerpCheck was running for %.6f s\n", cpu_time);
   return 0;
 }
