@@ -316,12 +316,6 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
   if (!all_eliminated) {
     return 103;
   }
-
-  std::cout << "Assignment: ";
-  for (auto lit : assignment) {
-      std::cout << lit << " ";
-  }
-  std::cout << std::endl;
   return 0;
 }
 
