@@ -118,7 +118,8 @@ public:
 static IPAsirMiniSAT * import (void * s) { return (IPAsirMiniSAT*) s; }
 const char * ipasir_signature () { return sig; }
 void * ipasir_init () { return new IPAsirMiniSAT (); }
-void ipasir_release (void * s) { import (s)->stats (); delete import (s); }
+/* remove printing stats, they are very verbose */
+void ipasir_release (void * s) { /* import (s)->stats (); */ delete import (s); }
 int ipasir_solve (void * s) { return import (s)->solve (); }
 void ipasir_add (void * s, int l) { import (s)->add (l); }
 void ipasir_assume (void * s, int l) { import (s)->assume (l); }
