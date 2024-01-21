@@ -282,13 +282,18 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
     return 102;
   }
 
-  for (Var i = 1; i <= qbf.numVars(); i++) {
-    if (qbf.isExistential(i)) {
-      Lit lit = ipasir_val(sat_solver, i);
-      if (std::find(assignment.begin(), assignment.end(), lit) == assignment.end()) {
-        assignment.push_back(lit);
+  for(uint32_t qi = 0; qi < qbf.numQuants(); qi++)
+  {
+    const Quant* quant = qbf.getQuant(qi);
+    if(quant->type == QuantType::EXISTS) {
+      for(const_var_iterator vit = quant->begin(); vit != quant->end(); vit++) {
+        assert(qbf.isExistential(*vit));
+        Lit lit = ipasir_val(sat_solver, *vit);
+        if (std::find(assignment.begin(), assignment.end(), lit) == assignment.end()) {
+          assignment.push_back(lit);
+        }
       }
-    }         
+    }
   }
   ipasir_release(sat_solver);
 
