@@ -37,6 +37,7 @@ int main(int argc, const char* argv[])
     return -2;
   }
 
+  double start_qbf_read = read_cpu_time();
   Formula qbf;
   {
     std::unique_ptr<QbfReader> qbf_reader(new QbfReader(qbf_file));
@@ -48,6 +49,8 @@ int main(int argc, const char* argv[])
       return res;
     }
   }
+  double qbf_read_time = read_cpu_time() - start_qbf_read;
+  printf("FerpCheck read QBF: %.6f s\n", qbf_read_time);
 
   gzFile ferp_file = gzopen(ferp_name, "rb");
   
@@ -57,6 +60,7 @@ int main(int argc, const char* argv[])
     return -3;
   }
 
+  double start_ferp_read = read_cpu_time();
   std::unique_ptr<FerpManager> fmngr(new FerpManager());
   {
     std::unique_ptr<FerpReader> ferp_reader(new FerpReader(ferp_file));
@@ -69,6 +73,8 @@ int main(int argc, const char* argv[])
       return res;
     }
   }
+  double ferp_read_time = read_cpu_time() - start_ferp_read;
+  printf("FerpCheck read FERP: %.6f s\n", ferp_read_time);
 
   int res = fmngr->check(qbf);
   if(res != 0)
@@ -78,6 +84,9 @@ int main(int argc, const char* argv[])
   }
   
   double cpu_time = read_cpu_time() - start_time;
+  printf("FerpCheck check nor: %.6f s\n", fmngr->check_nor_time);
+  printf("FerpCheck check elimination: %.6f s\n", fmngr->check_elimination_time);
+  printf("FerpCheck check resolution: %.6f s\n", fmngr->check_resolution_time);
   printf("FerpCheck was running for %.6f s\n", cpu_time);
   return 0;
 }

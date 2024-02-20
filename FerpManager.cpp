@@ -8,12 +8,23 @@
 #include <iostream>
 #include <vector>
 #include "ipasir.hh"
-
+#include <sys/resource.h>
 #include "FerpManager.h"
 
 #define DEBUG 0
 #define debugf(fmt, ...) \
             do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
+
+
+// taken from qrpcheck
+static inline double read_cpu_time()
+{
+  struct rusage u;
+  if (getrusage (RUSAGE_SELF, &u))
+    return 0;
+  return u.ru_utime.tv_sec + 1e-6 * u.ru_utime.tv_usec +
+         u.ru_stime.tv_sec + 1e-6 * u.ru_stime.tv_usec;
+}
 
 FerpManager::~FerpManager()
 {
@@ -92,6 +103,10 @@ int FerpManager::check(const Formula& qbf)
 
 int FerpManager::checkSAT(const Formula& qbf)
 {
+  check_nor_time = 0;
+  check_elimination_time = 0;
+  check_resolution_time = 0;
+
   uint32_t origin_idx = 0;
   for (auto clause : nor_clauses)
   {
@@ -101,12 +116,15 @@ int FerpManager::checkSAT(const Formula& qbf)
     origin_idx += 1;
   }
 
+  double start_check_resolution = read_cpu_time();
   for (auto i : res_clause_ids)
   {
     // clause comes from res rule
     int res = checkResolution(i);
     if (res) return res;
   }
+  check_resolution_time = read_cpu_time() - start_check_resolution;
+
   return 0;
 }
 
@@ -181,6 +199,9 @@ int FerpManager::checkExpansionUNSAT(const Formula& qbf, uint32_t index)
 
 int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_clause, uint32_t origin_idx)
 {
+  
+  double start_check_nor_clause = read_cpu_time();
+
   std::vector<Lit> assignment;
   
   // const std::vector<Lit>* prop_clause = trace_clauses[index];
@@ -241,8 +262,13 @@ int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_cl
     it1 += 1;
     it2 += 1;
   }
+  check_nor_time += read_cpu_time() - start_check_nor_clause;
   
+  double start_check_elimination = read_cpu_time();
+
   auto res = checkElimination(qbf, origin_idx, assignment);
+  
+  check_elimination_time += read_cpu_time() - start_check_elimination;
   if (res != 0) return res;
 
   return 0;

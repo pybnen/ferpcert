@@ -5,6 +5,7 @@
 #ifndef FERPCHECK_FERPMENAGER_H
 #define FERPCHECK_FERPMENAGER_H
 
+#include <stdint.h>
 #include <vector>
 #include <map>
 #include <set>
@@ -72,6 +73,9 @@ public:
   std::vector<std::vector<Lit>*> nor_clauses;
   std::vector<uint32_t> res_clause_ids;
   std::vector<std::vector<uint32_t>*>  original_clause_mapping;
+  double check_nor_time;
+  double check_elimination_time;  
+  double check_resolution_time;
   bool isHelper(Var v);
 
   std::vector<std::vector<Lit>*> trace_clauses;      ///< Clauses as they appear in the trace
