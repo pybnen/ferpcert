@@ -72,7 +72,8 @@ public:
   std::map<Var, std::vector<Lit>*> helper_variable_mapping;
   std::vector<std::vector<Lit>*> nor_clauses;
   std::vector<uint32_t> res_clause_ids;
-  std::vector<std::vector<uint32_t>*>  original_clause_mapping;
+  // std::vector<std::vector<uint32_t>*>  original_clause_mapping;
+  std::vector<std::vector<std::vector<uint32_t>*>*>  original_clause_mapping;
   double check_nor_time;
   double check_elimination_time;  
   double check_resolution_time;

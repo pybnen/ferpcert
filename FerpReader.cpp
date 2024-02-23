@@ -162,18 +162,39 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
   }
   else
   {
-    uint32_t original_clause_id = 0;
+
+    std::vector<std::vector<uint32_t>*> *oo = new std::vector<std::vector<uint32_t>*>();
     while (true)
     {
+      std::vector<uint32_t> *originals = new std::vector<uint32_t>();
+      uint32_t original_clause_id = 0;
+
       if (parseUnsigned(original_clause_id)) cleanSAT(3);
-      if (original_clause_id == 0) break;
-      original_clause_ids->push_back(original_clause_id);
+      if (original_clause_id == 0) {
+        break;
+      }
+      
+      originals->push_back(original_clause_id);
+      while (true)
+      {
+        if (parseUnsigned(original_clause_id)) cleanSAT(3);
+        if (original_clause_id == 0) break;
+        originals->push_back(original_clause_id);
+      }
+      oo->push_back(originals);
     }
+    // uint32_t original_clause_id = 0;
+    // while (true)
+    // {
+    //   if (parseUnsigned(original_clause_id)) cleanSAT(3);
+    //   if (original_clause_id == 0) break;
+    //   original_clause_ids->push_back(original_clause_id);
+    // }
     
     if (is_nor_clause)
     {
-      assert(original_clause_ids->size() == clause->size());
-      mngr.original_clause_mapping.push_back(original_clause_ids);
+      assert(oo->size() == clause->size());
+      mngr.original_clause_mapping.push_back(oo);
       
       std::vector<Lit>* copy_clause = new std::vector<Lit>();
       for (auto lit : *clause) {

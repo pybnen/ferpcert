@@ -215,7 +215,7 @@ int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_cl
 
   while (it1 != end1 && it2 != end2) {
     auto lit = *it1;
-    auto origin = *it2;
+    auto origin_arr = *it2;
 
     // create literal array, if helper variable
     std::vector<Lit> literal_array;
@@ -228,9 +228,6 @@ int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_cl
       literal_array.push_back(lit);
     }
 
-    const Clause* qbf_clause = qbf.getClause(origin - 1);
-    if(qbf_clause->size_a != literal_array.size()) return 2;
-
     orig_ex.clear();    
     for (auto litt : literal_array) {      
       for (auto annotation : *prop_to_annotation[var(litt)]) {
@@ -241,24 +238,28 @@ int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_cl
       orig_ex.push_back(make_lit(prop_to_original[var(litt)], sign(litt)));      
     }
     std::sort(orig_ex.begin(), orig_ex.end(), lit_order);
-    
-    // check if clauses are negated
-    {
-      const_lit_iterator li1 = qbf_clause->begin_a();
-      auto li2 = orig_ex.begin();
-      for(; li1 < qbf_clause->end_a() && li2 != orig_ex.end(); li1++, li2++)
-        if(*li1 != -(*li2)) return 3;
-    }
-    
-    // add all existentials negated to current assignment
-    {
-      for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
-        if (std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
-          assignment.push_back(negate(*ex_it));
+
+    for (auto origin : *origin_arr) {
+      const Clause* qbf_clause = qbf.getClause(origin - 1);
+      if(qbf_clause->size_a != literal_array.size()) return 2;
+
+      // check if clauses are negated
+      {
+        const_lit_iterator li1 = qbf_clause->begin_a();
+        auto li2 = orig_ex.begin();
+        for(; li1 < qbf_clause->end_a() && li2 != orig_ex.end(); li1++, li2++)
+          if(*li1 != -(*li2)) return 3;
+      }
+      
+      // add all existentials negated to current assignment
+      {
+        for (auto ex_it = qbf_clause->begin_e(); ex_it < qbf_clause->end_e(); ex_it++) {
+          if (std::find(assignment.begin(), assignment.end(), negate(*ex_it)) == assignment.end()) {
+            assignment.push_back(negate(*ex_it));
+          }
         }
       }
     }
-
     it1 += 1;
     it2 += 1;
   }
@@ -279,10 +280,12 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
   // For each clause in \phi not referenced by the nor clause,
   auto orignal_clauses = original_clause_mapping[origin_idx];
   std::vector<bool> eliminated(qbf.numClauses(), false);
-  for (auto original : *orignal_clauses) {
-    eliminated[original - 1] = true;
+  for (auto origin_arr : *orignal_clauses) {
+    for (auto original : *origin_arr) {
+      eliminated[original - 1] = true;
+    }
   }
-
+  
   void *sat_solver = ipasir_init();
   // add the existential part of the clauses that needs to be eliminated
   for (unsigned i = 0; i < qbf.numClauses(); i++) {        
