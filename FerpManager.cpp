@@ -35,6 +35,24 @@ FerpManager::~FerpManager()
   for(std::array<uint32_t, 2>* a : antecedents)
     delete a;
 
+  for (auto& outer_vec : original_clause_mapping) {
+      for (auto& inner_vec : *outer_vec) {
+          delete inner_vec;
+      }
+      delete outer_vec;
+  }
+  original_clause_mapping.clear();
+
+  for (auto& outer_vec : nor_clauses) {
+      delete outer_vec;
+  }
+  nor_clauses.clear();
+
+  for (auto& pair : helper_variable_mapping) {
+      delete pair.second;
+  }
+  helper_variable_mapping.clear();
+
 #ifdef FERP_CERT
   if(aig != nullptr) delete aig;
 #endif
