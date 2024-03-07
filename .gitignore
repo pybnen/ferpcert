@@ -5,3 +5,6 @@ ferpcert
 
 .vscode/
 build/
+glucose-syrup/*/*.or
+glucose-syrup/*/*.mk
+glucose-syrup/*/*.a
