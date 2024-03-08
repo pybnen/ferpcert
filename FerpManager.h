@@ -79,6 +79,8 @@ public:
   double check_nor_time;
   double check_elimination_time;  
   double check_resolution_time;
+  double find_assignment_time;
+  double eliminate_clauses_time;
   bool isHelper(Var v);
 
   std::vector<std::vector<Lit>*> trace_clauses;      ///< Clauses as they appear in the trace
