@@ -125,7 +125,6 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
   int ret = 0;
   bool is_nor_clause = true;
   std::vector<Lit>* clause = new std::vector<Lit>();
-  std::vector<uint32_t>* original_clause_ids = new std::vector<uint32_t>();
   std::array<uint32_t, 2>* ante = new std::array<uint32_t, 2>();
   Var helper_variable = 0;
   std::vector<Lit>* literal_array = new std::vector<Lit>();
@@ -151,6 +150,8 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
   
   if (!expansion_part)
   {
+    delete literal_array;
+
     if (parseUnsigned(ante->at(0))) cleanSAT(3);
     if (ante->at(0) == 0) cleanSAT(4);
     if (parseUnsigned(ante->at(1))) cleanSAT(5);
@@ -162,6 +163,7 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
   }
   else
   {
+    std::vector<uint32_t>* original_clause_ids = new std::vector<uint32_t>();
     uint32_t original_clause_id = 0;
     while (true)
     {
@@ -172,6 +174,8 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
     
     if (is_nor_clause)
     {
+      delete literal_array;
+
       assert(original_clause_ids->size() == clause->size());
       mngr.original_clause_mapping.push_back(original_clause_ids);
       
@@ -181,6 +185,9 @@ int FerpReader::readClauseSAT(FerpManager& mngr, bool expansion_part)
       }
       mngr.nor_clauses.push_back(copy_clause);
     } else {
+      assert(original_clause_ids->size() == 0);
+      delete original_clause_ids;
+
       if (mngr.helper_variable_mapping.count(helper_variable) > 0) {
         auto helper_arr = mngr.helper_variable_mapping[helper_variable];
         helper_arr->insert(helper_arr->end(), literal_array->begin(), literal_array->end());
