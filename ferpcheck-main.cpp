@@ -83,9 +83,12 @@ int main(int argc, const char* argv[])
     return res;
   }
   
+  /* print stats */
   double cpu_time = read_cpu_time() - start_time;
   printf("FerpCheck check nor: %.6f s\n", fmngr->check_nor_time);
   printf("FerpCheck check elimination: %.6f s\n", fmngr->check_elimination_time);
+  printf("FerpCheck sat solver called %d times\n", fmngr->sat_calls);
+  printf("FerpCheck sat solver: %.6f s\n", fmngr->check_sat_time);
   printf("FerpCheck check resolution: %.6f s\n", fmngr->check_resolution_time);
   printf("FerpCheck was running for %.6f s\n", cpu_time);
   return 0;
