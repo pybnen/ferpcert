@@ -89,6 +89,8 @@ int main(int argc, const char* argv[])
   printf("FerpCheck check elimination: %.6f s\n", fmngr->check_elimination_time);
   printf("FerpCheck sat solver called %d times\n", fmngr->sat_calls);
   printf("FerpCheck sat solver: %.6f s\n", fmngr->check_sat_time);
+  printf("FerpCheck find assigment: %.6f s\n", fmngr->find_assignment_time);
+  printf("FerpCheck eliminate clauses: %.6f s\n", fmngr->eliminate_clauses_time);
   printf("FerpCheck check resolution: %.6f s\n", fmngr->check_resolution_time);
   printf("FerpCheck was running for %.6f s\n", cpu_time);
   return 0;

@@ -123,6 +123,8 @@ int FerpManager::checkSAT(const Formula& qbf)
   check_elimination_time = 0;
   check_sat_time = 0;
   check_resolution_time = 0;
+  find_assignment_time = 0;
+  eliminate_clauses_time = 0;
 
   uint32_t origin_idx = 0;
   for (auto clause : nor_clauses)
@@ -292,7 +294,9 @@ int FerpManager::checkExpansionSAT(const Formula& qbf, std::vector<Lit>* prop_cl
 }
 
 int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::vector<Lit> assignment)
-{  
+{
+  double start_find_assignment = read_cpu_time();
+
   // For each clause in \phi not referenced by the nor clause,
   auto orignal_clauses = original_clause_mapping[origin_idx];
   std::vector<bool> eliminated(qbf.numClauses(), false);
@@ -346,6 +350,11 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
   }
   ipasir_release(sat_solver);
 
+  find_assignment_time += (read_cpu_time() - start_find_assignment);
+
+
+  double start_eliminate_clauses = read_cpu_time();
+
   // Check that the assignment array does not contain a literal and its negated literal.
   for (auto lit : assignment) {
     if (std::find(assignment.begin(), assignment.end(), negate(lit)) != assignment.end()) {
@@ -370,6 +379,9 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
   if (!all_eliminated) {
     return 103;
   }
+
+  eliminate_clauses_time += (read_cpu_time() - start_eliminate_clauses);
+  
   return 0;
 }
 
