@@ -329,7 +329,7 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
 
   auto is_sat = ipasir_solve(sat_solver) == 10;
   
-  check_sat_time += read_cpu_time() - start_check_sat_time;
+  check_sat_time += (read_cpu_time() - start_check_sat_time);
   sat_calls += 1;
 
   if (!is_sat) {
