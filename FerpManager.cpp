@@ -121,8 +121,10 @@ int FerpManager::check(const Formula& qbf)
 
 int FerpManager::checkSAT(const Formula& qbf)
 {
+  sat_calls = 0;
   check_nor_time = 0;
   check_elimination_time = 0;
+  check_sat_time = 0;
   check_resolution_time = 0;
 
   uint32_t origin_idx = 0;
@@ -323,7 +325,13 @@ int FerpManager::checkElimination(const Formula& qbf, uint32_t origin_idx, std::
     ipasir_add(sat_solver, 0);
   }
 
+  double start_check_sat_time = read_cpu_time();
+
   auto is_sat = ipasir_solve(sat_solver) == 10;
+  
+  check_sat_time += read_cpu_time() - start_check_sat_time;
+  sat_calls += 1;
+
   if (!is_sat) {
     ipasir_release(sat_solver);
     return 102;
